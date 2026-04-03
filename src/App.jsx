@@ -26,42 +26,50 @@ export default function App() {
   useEffect(() => {
     let active = true
 
-    const savedAssistantSession = localStorage.getItem('assistant_session')
-    if (savedAssistantSession) {
-      try {
+    try {
+      const savedAssistantSession = localStorage.getItem('assistant_session')
+      if (savedAssistantSession) {
         const parsed = JSON.parse(savedAssistantSession)
         setAssistantSession(parsed)
-      } catch (error) {
-        console.log(error)
-        localStorage.removeItem('assistant_session')
       }
+    } catch (error) {
+      console.log('assistant_session error:', error)
+      localStorage.removeItem('assistant_session')
     }
 
     async function initAuth() {
-      setLoadingAuth(true)
+      try {
+        setLoadingAuth(true)
 
-      const { data, error } = await supabase.auth.getSession()
+        const { data, error } = await supabase.auth.getSession()
 
-      if (error) {
-        console.log(error)
-      }
+        if (error) {
+          console.log('getSession error:', error)
+        }
 
-      const currentSession = data?.session || null
+        const currentSession = data?.session || null
 
-      if (!active) return
-
-      setSession(currentSession)
-
-      if (currentSession?.user?.id) {
-        const loadedProfile = await fetchProfile(currentSession.user.id)
         if (!active) return
-        setProfile(loadedProfile)
-      } else {
-        setProfile(null)
-      }
 
-      if (active) {
-        setLoadingAuth(false)
+        setSession(currentSession)
+
+        if (currentSession?.user?.id) {
+          const loadedProfile = await fetchProfile(currentSession.user.id)
+          if (!active) return
+          setProfile(loadedProfile)
+        } else {
+          setProfile(null)
+        }
+      } catch (error) {
+        console.log('initAuth crash:', error)
+        if (active) {
+          setSession(null)
+          setProfile(null)
+        }
+      } finally {
+        if (active) {
+          setLoadingAuth(false)
+        }
       }
     }
 
@@ -70,21 +78,28 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      if (!active) return
-
-      setLoadingAuth(true)
-      setSession(newSession || null)
-
-      if (newSession?.user?.id) {
-        const loadedProfile = await fetchProfile(newSession.user.id)
+      try {
         if (!active) return
-        setProfile(loadedProfile)
-      } else {
-        setProfile(null)
-      }
 
-      if (active) {
-        setLoadingAuth(false)
+        setLoadingAuth(true)
+        setSession(newSession || null)
+
+        if (newSession?.user?.id) {
+          const loadedProfile = await fetchProfile(newSession.user.id)
+          if (!active) return
+          setProfile(loadedProfile)
+        } else {
+          setProfile(null)
+        }
+      } catch (error) {
+        console.log('onAuthStateChange crash:', error)
+        if (active) {
+          setProfile(null)
+        }
+      } finally {
+        if (active) {
+          setLoadingAuth(false)
+        }
       }
     })
 
@@ -95,18 +110,23 @@ export default function App() {
   }, [])
 
   async function fetchProfile(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle()
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle()
 
-    if (error) {
-      console.log(error)
+      if (error) {
+        console.log('fetchProfile error:', error)
+        return null
+      }
+
+      return data || null
+    } catch (error) {
+      console.log('fetchProfile crash:', error)
       return null
     }
-
-    return data || null
   }
 
   async function logout() {
@@ -124,18 +144,36 @@ export default function App() {
   }
 
   if (loadingAuth) {
-    return <div style={{ padding: 20 }}>Chargement...</div>
+    return (
+      <div style={{ padding: 20, textAlign: 'center' }}>
+        <p>Chargement...</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '12px 16px',
+            borderRadius: 12,
+            border: 'none',
+            background: '#2b0a78',
+            color: '#fff',
+            fontWeight: 'bold',
+          }}
+        >
+          Actualiser
+        </button>
+      </div>
+    )
   }
 
   const activeProfile = session ? profile : assistantSession
   const isAdmin = activeProfile?.role === 'admin'
-  const isAssistant = activeProfile?.role === 'assistant'
 
   if (!session && !assistantSession) {
     if (authPage === 'assistant-login') {
       return (
         <AssistantLoginPage
           onLoginSuccess={(assistantData) => {
+            localStorage.setItem('assistant_session', JSON.stringify(assistantData))
             setAssistantSession(assistantData)
             setAuthPage('login')
             setPage('home')
@@ -153,7 +191,25 @@ export default function App() {
   }
 
   if (session && !profile) {
-    return <div style={{ padding: 20 }}>Chargement profil...</div>
+    return (
+      <div style={{ padding: 20, textAlign: 'center' }}>
+        <p>Chargement profil...</p>
+        <button
+          type="button"
+          onClick={logout}
+          style={{
+            padding: '12px 16px',
+            borderRadius: 12,
+            border: 'none',
+            background: '#d91e18',
+            color: '#fff',
+            fontWeight: 'bold',
+          }}
+        >
+          Réinitialiser session
+        </button>
+      </div>
+    )
   }
 
   function renderPage() {
