@@ -8,8 +8,7 @@ import CouplesPage from './pages/CouplesPage'
 import SeancesPage from './pages/SeancesPage'
 import PaiementsPage from './pages/PaiementsPage'
 import BilansPage from './pages/BilansPage'
-import CreateAssistantPage from './pages/CreateAssistantPage'
-import RegisterAssistantPage from './pages/RegisterAssistantPage'
+import AssistantLoginPage from './pages/AssistantLoginPage'
 
 import PortalPage from './pages/PortalPage'
 import LoginPage from './pages/LoginPage'
@@ -21,44 +20,48 @@ export default function App() {
   const [authPage, setAuthPage] = useState('login')
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [assistantSession, setAssistantSession] = useState(null)
   const [loadingAuth, setLoadingAuth] = useState(true)
 
   useEffect(() => {
     let active = true
 
-    async function initAuth() {
+    const savedAssistantSession = localStorage.getItem('assistant_session')
+    if (savedAssistantSession) {
       try {
-        setLoadingAuth(true)
-
-        const { data, error } = await supabase.auth.getSession()
-
-        if (error) {
-          console.log('getSession error:', error)
-        }
-
-        const currentSession = data?.session || null
-
-        if (!active) return
-
-        setSession(currentSession)
-
-        if (currentSession?.user?.id) {
-          const loadedProfile = await fetchProfile(currentSession.user.id)
-          if (!active) return
-          setProfile(loadedProfile)
-        } else {
-          setProfile(null)
-        }
+        const parsed = JSON.parse(savedAssistantSession)
+        setAssistantSession(parsed)
       } catch (error) {
-        console.log('initAuth crash:', error)
-        if (active) {
-          setSession(null)
-          setProfile(null)
-        }
-      } finally {
-        if (active) {
-          setLoadingAuth(false)
-        }
+        console.log(error)
+        localStorage.removeItem('assistant_session')
+      }
+    }
+
+    async function initAuth() {
+      setLoadingAuth(true)
+
+      const { data, error } = await supabase.auth.getSession()
+
+      if (error) {
+        console.log(error)
+      }
+
+      const currentSession = data?.session || null
+
+      if (!active) return
+
+      setSession(currentSession)
+
+      if (currentSession?.user?.id) {
+        const loadedProfile = await fetchProfile(currentSession.user.id)
+        if (!active) return
+        setProfile(loadedProfile)
+      } else {
+        setProfile(null)
+      }
+
+      if (active) {
+        setLoadingAuth(false)
       }
     }
 
@@ -67,28 +70,21 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      try {
+      if (!active) return
+
+      setLoadingAuth(true)
+      setSession(newSession || null)
+
+      if (newSession?.user?.id) {
+        const loadedProfile = await fetchProfile(newSession.user.id)
         if (!active) return
+        setProfile(loadedProfile)
+      } else {
+        setProfile(null)
+      }
 
-        setLoadingAuth(true)
-        setSession(newSession || null)
-
-        if (newSession?.user?.id) {
-          const loadedProfile = await fetchProfile(newSession.user.id)
-          if (!active) return
-          setProfile(loadedProfile)
-        } else {
-          setProfile(null)
-        }
-      } catch (error) {
-        console.log('onAuthStateChange crash:', error)
-        if (active) {
-          setProfile(null)
-        }
-      } finally {
-        if (active) {
-          setLoadingAuth(false)
-        }
+      if (active) {
+        setLoadingAuth(false)
       }
     })
 
@@ -99,29 +95,26 @@ export default function App() {
   }, [])
 
   async function fetchProfile(userId) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle()
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle()
 
-      if (error) {
-        console.log('fetchProfile error:', error)
-        return null
-      }
-
-      return data || null
-    } catch (error) {
-      console.log('fetchProfile crash:', error)
+    if (error) {
+      console.log(error)
       return null
     }
+
+    return data || null
   }
 
   async function logout() {
     await supabase.auth.signOut()
+    localStorage.removeItem('assistant_session')
     setSession(null)
     setProfile(null)
+    setAssistantSession(null)
     setPage('home')
     setAuthPage('login')
   }
@@ -131,73 +124,44 @@ export default function App() {
   }
 
   if (loadingAuth) {
-    return (
-      <div style={{ padding: 20, textAlign: 'center' }}>
-        <p>Chargement...</p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          style={{
-            padding: '12px 16px',
-            borderRadius: 12,
-            border: 'none',
-            background: '#2b0a78',
-            color: '#fff',
-            fontWeight: 'bold',
-          }}
-        >
-          Actualiser
-        </button>
-      </div>
-    )
+    return <div style={{ padding: 20 }}>Chargement...</div>
   }
 
-  if (!session) {
-    if (authPage === 'register-assistant') {
+  const activeProfile = session ? profile : assistantSession
+  const isAdmin = activeProfile?.role === 'admin'
+  const isAssistant = activeProfile?.role === 'assistant'
+
+  if (!session && !assistantSession) {
+    if (authPage === 'assistant-login') {
       return (
-        <RegisterAssistantPage
-          onBackToLogin={() => setAuthPage('login')}
+        <AssistantLoginPage
+          onLoginSuccess={(assistantData) => {
+            setAssistantSession(assistantData)
+            setAuthPage('login')
+            setPage('home')
+          }}
+          onBack={() => setAuthPage('login')}
         />
       )
     }
 
     return (
       <LoginPage
-        onOpenRegisterAssistant={() => setAuthPage('register-assistant')}
+        onOpenRegisterAssistant={() => setAuthPage('assistant-login')}
       />
     )
   }
 
-  if (!profile) {
-    return (
-      <div style={{ padding: 20, textAlign: 'center' }}>
-        <p>Chargement profil...</p>
-        <button
-          type="button"
-          onClick={logout}
-          style={{
-            padding: '12px 16px',
-            borderRadius: 12,
-            border: 'none',
-            background: '#d91e18',
-            color: '#fff',
-            fontWeight: 'bold',
-          }}
-        >
-          Réinitialiser session
-        </button>
-      </div>
-    )
+  if (session && !profile) {
+    return <div style={{ padding: 20 }}>Chargement profil...</div>
   }
-
-  const isAdmin = profile?.role === 'admin'
 
   function renderPage() {
     if (page === 'home') {
       return (
         <HomePage
           onNavigate={setPage}
-          profile={profile}
+          profile={activeProfile}
           onLogout={logout}
         />
       )
@@ -208,32 +172,32 @@ export default function App() {
         return (
           <HomePage
             onNavigate={setPage}
-            profile={profile}
+            profile={activeProfile}
             onLogout={logout}
           />
         )
       }
-      return <ClassesPage profile={profile} />
+      return <ClassesPage profile={activeProfile} />
     }
 
     if (page === 'students') {
-      return <StudentsPage profile={profile} />
+      return <StudentsPage profile={activeProfile} />
     }
 
     if (page === 'couples') {
-      return <CouplesPage profile={profile} />
+      return <CouplesPage profile={activeProfile} />
     }
 
     if (page === 'seances') {
-      return <SeancesPage profile={profile} />
+      return <SeancesPage profile={activeProfile} />
     }
 
     if (page === 'paiements') {
-      return <PaiementsPage profile={profile} />
+      return <PaiementsPage profile={activeProfile} />
     }
 
     if (page === 'bilans') {
-      return <BilansPage profile={profile} />
+      return <BilansPage profile={activeProfile} />
     }
 
     if (page === 'create-assistant') {
@@ -241,18 +205,23 @@ export default function App() {
         return (
           <HomePage
             onNavigate={setPage}
-            profile={profile}
+            profile={activeProfile}
             onLogout={logout}
           />
         )
       }
-      return <CreateAssistantPage />
+
+      return (
+        <div style={styles.infoBox}>
+          Les assistants se connectent maintenant avec le code et le mot de passe de leur classe.
+        </div>
+      )
     }
 
     return (
       <HomePage
         onNavigate={setPage}
-        profile={profile}
+        profile={activeProfile}
         onLogout={logout}
       />
     )
@@ -264,7 +233,7 @@ export default function App() {
         <MainMenu
           currentPage={page}
           onChangePage={setPage}
-          profile={profile}
+          profile={activeProfile}
           onLogout={logout}
         />
       )}
@@ -281,5 +250,11 @@ const styles = {
   },
   content: {
     paddingBottom: 30,
+  },
+  infoBox: {
+    padding: 20,
+    textAlign: 'center',
+    color: '#2b0a78',
+    fontWeight: 'bold',
   },
 }
