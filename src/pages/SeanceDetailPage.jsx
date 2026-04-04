@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { useEffect, useRef, useState } from 'react'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 import { supabase } from '../supabaseClient'
-
-const INSCRIPTION_MONTANT = 10000
 
 export default function SeanceDetailPage({ seanceId, onBack }) {
   const [seance, setSeance] = useState(null)
   const [students, setStudents] = useState([])
   const [presences, setPresences] = useState({})
-  const [allPaiementsOfClass, setAllPaiementsOfClass] = useState([])
-  const [rapport, setRapport] = useState('')
+  const [paiements, setPaiements] = useState([])
   const [temoignage, setTemoignage] = useState('')
   const [matriculeInput, setMatriculeInput] = useState('')
   const [message, setMessage] = useState('')
@@ -17,6 +14,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   const [scannerStarted, setScannerStarted] = useState(false)
   const [pointageMode, setPointageMode] = useState('matricule')
   const [editingRapport, setEditingRapport] = useState(true)
+  const [scanDebug, setScanDebug] = useState('')
 
   const qrRef = useRef(null)
   const lastScannedRef = useRef('')
@@ -64,10 +62,9 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     if (studentsError) {
       console.log(studentsError)
       setMessage('Erreur chargement étudiants')
-      return
+    } else {
+      setStudents(studentsData || [])
     }
-
-    setStudents(studentsData || [])
 
     const { data: presencesData, error: presencesError } = await supabase
       .from('presences')
@@ -77,31 +74,30 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     if (presencesError) {
       console.log(presencesError)
       setMessage('Erreur chargement pointage')
-      return
+    } else {
+      const map = {}
+      ;(presencesData || []).forEach((item) => {
+        map[item.student_id] = item.statut
+      })
+      setPresences(map)
     }
 
-    const map = {}
-    ;(presencesData || []).forEach((item) => {
-      map[item.student_id] = item.statut
-    })
-    setPresences(map)
-
-    const studentIds = (studentsData || []).map((student) => student.id)
+    const studentIds = (studentsData || []).map((s) => s.id)
 
     if (studentIds.length > 0) {
       const { data: paiementsData, error: paiementsError } = await supabase
         .from('paiements')
         .select('*')
         .in('student_id', studentIds)
+        .eq('date_paiement', seanceData.date_seance)
 
       if (paiementsError) {
         console.log(paiementsError)
-        setMessage('Erreur chargement paiements')
       } else {
-        setAllPaiementsOfClass(paiementsData || [])
+        setPaiements(paiementsData || [])
       }
     } else {
-      setAllPaiementsOfClass([])
+      setPaiements([])
     }
 
     const { data: rapportData, error: rapportError } = await supabase
@@ -113,14 +109,50 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     if (rapportError) {
       console.log(rapportError)
     } else if (rapportData) {
-      setRapport(rapportData.rapport || '')
       setTemoignage(rapportData.temoignage || '')
       setEditingRapport(false)
     } else {
-      setRapport('')
       setTemoignage('')
       setEditingRapport(true)
     }
+  }
+
+  function normalizeText(value) {
+    return (value || '')
+      .replace(/\n/g, '')
+      .replace(/\r/g, '')
+      .replace(/\t/g, '')
+      .trim()
+      .toLowerCase()
+  }
+
+  function extractMatriculeFromQr(rawText) {
+    if (!rawText) return ''
+
+    const clean = String(rawText).trim()
+
+    try {
+      const parsed = JSON.parse(clean)
+      if (parsed?.matricule) {
+        return String(parsed.matricule).trim()
+      }
+    } catch (_) {}
+
+    const match = clean.match(/matricule\s*[:=-]\s*([A-Za-z0-9_-]+)/i)
+    if (match?.[1]) {
+      return match[1].trim()
+    }
+
+    return clean
+  }
+
+  function findStudentByMatricule(rawCode) {
+    const matricule = extractMatriculeFromQr(rawCode)
+    const normalizedCode = normalizeText(matricule)
+
+    return students.find(
+      (s) => normalizeText(s.matricule) === normalizedCode
+    )
   }
 
   async function markPresence(studentId, statut) {
@@ -179,9 +211,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       return
     }
 
-    const student = students.find(
-      (s) => (s.matricule || '').trim().toLowerCase() === code.toLowerCase()
-    )
+    const student = findStudentByMatricule(code)
 
     if (!student) {
       setMessage('Aucun étudiant trouvé avec ce matricule dans cette classe')
@@ -199,49 +229,64 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     if (scannerStarted) return
 
     setMessage('')
+    setScanDebug('')
 
     try {
       if (qrRef.current) {
         try {
           await qrRef.current.stop()
+        } catch (error) {
+          console.log(error)
+        }
+
+        try {
           await qrRef.current.clear()
         } catch (error) {
           console.log(error)
         }
+
         qrRef.current = null
       }
 
-      const scanner = new Html5Qrcode('qr-reader')
+      const scanner = new Html5Qrcode('qr-reader', {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
+      })
+
       qrRef.current = scanner
 
       await scanner.start(
-        { facingMode: 'environment' },
+        { facingMode: { ideal: 'environment' } },
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
+          fps: 15,
+          qrbox: { width: 280, height: 280 },
           aspectRatio: 1,
           disableFlip: false,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         },
         async (decodedText) => {
-          const code = (decodedText || '').trim()
+          const raw = String(decodedText || '').trim()
+          const code = extractMatriculeFromQr(raw)
           const now = Date.now()
 
+          setScanDebug(`QR lu : ${raw}`)
+
           if (
-            lastScannedRef.current === code &&
+            lastScannedRef.current === raw &&
             now - lastScannedAtRef.current < 2500
           ) {
             return
           }
 
-          lastScannedRef.current = code
+          lastScannedRef.current = raw
           lastScannedAtRef.current = now
 
-          const student = students.find(
-            (s) => (s.matricule || '').trim().toLowerCase() === code.toLowerCase()
-          )
+          const student = findStudentByMatricule(raw)
 
           if (!student) {
-            setMessage(`QR non reconnu : ${code}`)
+            setMessage(`QR lu mais matricule non reconnu : ${code}`)
             return
           }
 
@@ -249,7 +294,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           if (!ok) return
 
           setMessage(`Présence validée : ${student.nom} ${student.prenom}`)
-          await stopScanner()
         },
         () => {}
       )
@@ -293,7 +337,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     const payload = {
       seance_id: seanceId,
       class_id: seance.class_id,
-      rapport: rapport.trim(),
+      rapport: '',
       temoignage: temoignage.trim(),
       redige_par: seance.classes?.assistant_nom || null,
     }
@@ -332,36 +376,121 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
 
     if (error) {
       console.log(error)
-      setMessage('Erreur enregistrement rapport')
+      setMessage('Erreur enregistrement témoignages')
       return
     }
 
-    setMessage('Rapport enregistré avec succès')
+    setMessage('Témoignages enregistrés avec succès')
     setEditingRapport(false)
   }
 
+  function formatDateFR(dateValue) {
+    if (!dateValue) return '-'
+
+    const date = new Date(dateValue)
+    if (Number.isNaN(date.getTime())) return dateValue
+
+    return date.toLocaleDateString('fr-FR')
+  }
+
+  function getYearLabel(annee) {
+    if (Number(annee) === 1) return '1e année'
+    return `${annee}e année`
+  }
+
+  function getPresentStudents() {
+    return students.filter((student) => presences[student.id] === 'present')
+  }
+
+  function getContributionsOfDay() {
+    return paiements.filter((p) => p.type_paiement === 'contribution')
+  }
+
+  function getInscriptionsOfDay() {
+    return paiements.filter((p) => p.type_paiement === 'inscription')
+  }
+
+  function getStudentFullName(studentId) {
+    const student = students.find((s) => s.id === studentId)
+    if (!student) return 'Étudiant inconnu'
+    return `${student.nom || ''} ${student.prenom || ''}`.trim()
+  }
+
+  function buildContributionLines() {
+    const contributions = getContributionsOfDay()
+
+    if (contributions.length === 0) {
+      return ['Aucune contribution enregistrée']
+    }
+
+    return contributions.map((item) => {
+      return `${getStudentFullName(item.student_id)} : ${Number(item.montant || 0)} FCFA`
+    })
+  }
+
+  function getTotalContribution() {
+    return getContributionsOfDay().reduce(
+      (sum, item) => sum + Number(item.montant || 0),
+      0
+    )
+  }
+
+  function getTotalInscription() {
+    return getInscriptionsOfDay().reduce(
+      (sum, item) => sum + Number(item.montant || 0),
+      0
+    )
+  }
+
   function buildShareContent() {
+    const presents = getPresentStudents().length
+    const totalStudents = students.length
+    const contributionLines = buildContributionLines()
+    const totalContribution = getTotalContribution()
+    const totalInscription = getTotalInscription()
+
+    const centreLabel = `${seance?.classes?.nom || '-'} ${getYearLabel(seance?.classes?.annee)}`
+    const seanceLine1 =
+      seance?.titre ||
+      seance?.theme ||
+      seance?.direction ||
+      seance?.libelle ||
+      'Direction'
+
+    const seanceLine2 = `Séance ${seance?.numero_seance || '-'}: ${seance?.chapitre || '-'}`
+
     return [
-      '*RAPPORT DE SÉANCE*',
+      '*Rapport les Écoles et Universités de la Connaissance de JÉSUS-CHRIST*',
       '',
-      `*Classe :* ${seance?.classes?.nom || '-'}`,
-      `*Année :* ${seance?.classes?.annee || '-'}`,
-      `*Date :* ${seance?.date_seance || '-'}`,
-      `*Numéro séance :* ${seance?.numero_seance || '-'}`,
-      `*Chapitre :* ${seance?.chapitre || '-'}`,
+      `_*Abidjan le ${formatDateFR(seance?.date_seance)}*_`,
       '',
-      '*RAPPORT*',
-      rapport || 'Aucun rapport enregistré',
+      `*CENTRE*: *${centreLabel}*`,
       '',
-      '*TÉMOIGNAGE*',
-      temoignage || 'Aucun témoignage enregistré',
+      `*Séance:* ${seanceLine1}`,
+      `*${seanceLine2}*`,
+      '',
+      `*Effectifs :* ${presents}/${totalStudents}`,
+      '',
+      `*Inscriptions:* ${totalInscription} FCFA`,
+      '',
+      '*Contribution:*',
+      ...contributionLines,
+      '',
+      `*Total :* ${totalContribution} FCFA`,
+      '',
+      '*Témoignages :*',
+      '',
+      temoignage?.trim() || 'Aucun témoignage enregistré',
+      '',
+      '*Nom de l’assistant:*',
+      `- ${seance?.classes?.assistant_nom || 'Non renseigné'}`,
     ].join('\n')
   }
 
   async function copyRapportEtTemoignage() {
     try {
       await navigator.clipboard.writeText(buildShareContent())
-      setMessage('Rapport et témoignage copiés')
+      setMessage('Rapport copié')
     } catch (error) {
       console.log(error)
       setMessage('Impossible de copier automatiquement')
@@ -385,75 +514,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   function getNonPointesCount() {
     return students.length - getPresentsCount() - getAbsentsCount()
   }
-
-  function getLinkedStudentIds(studentId) {
-    const student = students.find((s) => s.id === studentId)
-
-    if (!student) return [studentId]
-    if (!student.couple_record_id) return [studentId]
-
-    return students
-      .filter((s) => s.couple_record_id === student.couple_record_id)
-      .map((s) => s.id)
-  }
-
-  function getStudentInscriptionPaid(studentId) {
-    const linkedIds = getLinkedStudentIds(studentId)
-
-    return allPaiementsOfClass
-      .filter(
-        (p) =>
-          linkedIds.includes(p.student_id) &&
-          p.type_paiement === 'inscription'
-      )
-      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
-  }
-
-  function getStudentContributionPaid(studentId) {
-    const linkedIds = getLinkedStudentIds(studentId)
-
-    return allPaiementsOfClass
-      .filter(
-        (p) =>
-          linkedIds.includes(p.student_id) &&
-          p.type_paiement === 'contribution'
-      )
-      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
-  }
-
-  const financialStats = useMemo(() => {
-    const inscriptionsPayees = students.filter(
-      (student) => getStudentInscriptionPaid(student.id) >= INSCRIPTION_MONTANT
-    ).length
-
-    const inscriptionsNonPayees = students.length - inscriptionsPayees
-
-    const contributionsOk = students.filter(
-      (student) =>
-        getStudentContributionPaid(student.id) > 0 ||
-        (student.contribution_avance || 0) > 0
-    ).length
-
-    const contributionsNonOk = students.length - contributionsOk
-
-    return {
-      inscriptionsPayees,
-      inscriptionsNonPayees,
-      contributionsOk,
-      contributionsNonOk,
-    }
-  }, [students, allPaiementsOfClass])
-
-  const studentsWithStatus = useMemo(() => {
-    return students.map((student) => {
-      const statut = presences[student.id] || 'non_pointe'
-
-      return {
-        ...student,
-        statut,
-      }
-    })
-  }, [students, presences])
 
   if (!seance) {
     return (
@@ -485,6 +545,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
         </div>
 
         {message ? <p style={styles.message}>{message}</p> : null}
+        {scanDebug ? <p style={styles.debug}>{scanDebug}</p> : null}
       </div>
 
       <div style={styles.card}>
@@ -521,7 +582,8 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
             <h3 style={styles.sectionTitle}>Pointage par QR</h3>
 
             <p style={styles.helpText}>
-              Scanne un QR affiché sur un autre téléphone ou sur une image nette.
+              Le QR doit contenir le matricule exact de l’étudiant,
+              ou un JSON du type {`{"matricule":"SAM2020-001"}`}.
             </p>
 
             <div id="qr-reader" style={styles.qrReader}></div>
@@ -617,7 +679,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
         <div style={styles.resumeGrid}>
           <div style={styles.resumeBox}>
             <strong>{students.length}</strong>
-            <span>Fidèles</span>
+            <span>Étudiants</span>
           </div>
 
           <div style={styles.resumeBox}>
@@ -638,78 +700,12 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       </div>
 
       <div style={styles.card}>
-        <h3 style={styles.sectionTitle}>Bilan financier</h3>
+        <h3 style={styles.sectionTitle}>Témoignages</h3>
 
-        <div style={styles.resumeGrid}>
-          <div style={styles.resumeBox}>
-            <strong>{financialStats.inscriptionsPayees}</strong>
-            <span>Inscriptions payées</span>
-          </div>
-
-          <div style={styles.resumeBox}>
-            <strong>{financialStats.inscriptionsNonPayees}</strong>
-            <span>Inscriptions non payées</span>
-          </div>
-
-          <div style={styles.resumeBox}>
-            <strong>{financialStats.contributionsOk}</strong>
-            <span>Contributions à jour</span>
-          </div>
-
-          <div style={styles.resumeBox}>
-            <strong>{financialStats.contributionsNonOk}</strong>
-            <span>Contributions non à jour</span>
-          </div>
-        </div>
-      </div>
-
-      <div style={styles.card}>
-        <h3 style={styles.sectionTitle}>Fidèles de la séance</h3>
-
-        {studentsWithStatus.length === 0 ? (
-          <p>Aucun fidèle lié à cette classe.</p>
-        ) : (
-          studentsWithStatus.map((student) => (
-            <div key={student.id} style={styles.studentCard}>
-              <strong style={styles.studentName}>
-                {student.nom} {student.prenom}
-              </strong>
-
-              <p style={styles.meta}>Matricule : {student.matricule || '-'}</p>
-
-              <p style={styles.meta}>
-                Statut :{' '}
-                {student.statut === 'present'
-                  ? 'Présent'
-                  : student.statut === 'absent'
-                  ? 'Absent'
-                  : 'Non pointé'}
-              </p>
-
-              <p style={styles.meta}>
-                Inscription : {getStudentInscriptionPaid(student.id) >= INSCRIPTION_MONTANT ? 'Payée' : 'Non payée'}
-              </p>
-
-              <p style={styles.meta}>
-                Contribution : {getStudentContributionPaid(student.id) > 0 || (student.contribution_avance || 0) > 0 ? 'À jour' : 'Non à jour'}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div style={styles.card}>
-        <h3 style={styles.sectionTitle}>Rapport de séance</h3>
-
-        {!editingRapport && (rapport || temoignage) ? (
+        {!editingRapport && temoignage ? (
           <>
             <div style={styles.readBox}>
-              <h4 style={styles.readTitle}>Rapport</h4>
-              <p style={styles.readText}>{rapport || 'Aucun rapport enregistré'}</p>
-            </div>
-
-            <div style={styles.readBox}>
-              <h4 style={styles.readTitle}>Témoignage</h4>
+              <h4 style={styles.readTitle}>Témoignages</h4>
               <p style={styles.readText}>{temoignage || 'Aucun témoignage enregistré'}</p>
             </div>
 
@@ -743,14 +739,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           <>
             <textarea
               style={styles.textarea}
-              placeholder="Rapport de séance"
-              value={rapport}
-              onChange={(e) => setRapport(e.target.value)}
-            />
-
-            <textarea
-              style={styles.textarea}
-              placeholder="Témoignage"
+              placeholder="Saisir seulement les témoignages"
               value={temoignage}
               onChange={(e) => setTemoignage(e.target.value)}
             />
@@ -761,10 +750,10 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
               onClick={saveRapport}
               disabled={loadingRapport}
             >
-              {loadingRapport ? 'Enregistrement...' : 'Enregistrer rapport'}
+              {loadingRapport ? 'Enregistrement...' : 'Enregistrer témoignages'}
             </button>
 
-            {(rapport || temoignage) && (
+            {temoignage && (
               <button
                 type="button"
                 style={styles.secondaryButtonFull}
@@ -855,6 +844,14 @@ const styles = {
     wordBreak: 'break-word',
   },
 
+  debug: {
+    marginTop: 10,
+    color: '#555',
+    textAlign: 'center',
+    fontSize: 13,
+    wordBreak: 'break-word',
+  },
+
   pointageTitle: {
     marginTop: 0,
     marginBottom: 14,
@@ -922,7 +919,7 @@ const styles = {
 
   textarea: {
     width: '100%',
-    minHeight: 160,
+    minHeight: 220,
     padding: 14,
     marginBottom: 12,
     borderRadius: 12,
@@ -935,8 +932,11 @@ const styles = {
 
   qrReader: {
     width: '100%',
+    minHeight: 320,
     marginBottom: 12,
     overflow: 'hidden',
+    borderRadius: 16,
+    background: '#000',
   },
 
   studentCard: {
