@@ -15,7 +15,7 @@ import PortalPage from './pages/PortalPage'
 import LoginPage from './pages/LoginPage'
 import MainMenu from './components/MainMenu'
 
-function withTimeout(promise, ms = 6000) {
+function withTimeout(promise, ms = 4000) {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
@@ -37,11 +37,13 @@ export default function App() {
     let active = true
 
     try {
-      const saved = localStorage.getItem('assistant_session')
-      if (saved) {
-        setAssistantSession(JSON.parse(saved))
+      const savedAssistantSession = localStorage.getItem('assistant_session')
+      if (savedAssistantSession) {
+        const parsed = JSON.parse(savedAssistantSession)
+        setAssistantSession(parsed)
       }
-    } catch (e) {
+    } catch (error) {
+      console.log('assistant_session error:', error)
       localStorage.removeItem('assistant_session')
     }
 
@@ -49,12 +51,8 @@ export default function App() {
       try {
         setLoadingAuth(true)
 
-        const { data } = await withTimeout(
-          supabase.auth.getSession(),
-          6000
-        )
-
-        const currentSession = data?.session || null
+        const result = await withTimeout(supabase.auth.getSession(), 4000)
+        const currentSession = result?.data?.session || null
 
         if (!active) return
 
@@ -68,12 +66,16 @@ export default function App() {
           setProfile(null)
         }
       } catch (error) {
-        console.log('Auth error:', error)
+        console.log('initAuth error:', error)
+
         if (!active) return
+
         setSession(null)
         setProfile(null)
       } finally {
-        if (active) setLoadingAuth(false)
+        if (active) {
+          setLoadingAuth(false)
+        }
       }
     }
 
@@ -85,7 +87,6 @@ export default function App() {
       if (!active) return
 
       try {
-        setLoadingAuth(true)
         setSession(newSession || null)
 
         if (newSession?.user?.id) {
@@ -96,9 +97,13 @@ export default function App() {
           setProfile(null)
         }
       } catch (error) {
-        console.log('Auth change error:', error)
+        console.log('onAuthStateChange error:', error)
+        if (!active) return
+        setProfile(null)
       } finally {
-        if (active) setLoadingAuth(false)
+        if (active) {
+          setLoadingAuth(false)
+        }
       }
     })
 
@@ -110,29 +115,43 @@ export default function App() {
 
   async function fetchProfile(userId) {
     try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle(),
+        4000
+      )
+
+      if (error) {
+        console.log('fetchProfile error:', error)
+        return null
+      }
 
       return data || null
-    } catch {
+    } catch (error) {
+      console.log('fetchProfile crash:', error)
       return null
     }
   }
 
   async function logout() {
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.log('logout error:', error)
+    }
+
     localStorage.removeItem('assistant_session')
     setSession(null)
     setProfile(null)
     setAssistantSession(null)
     setPage('home')
     setAuthPage('login')
+    setLoadingAuth(false)
   }
 
-  // 🔥 CORRECTION IMPORTANTE
   const activeProfile = session ? profile : assistantSession || null
   const isAdmin = activeProfile?.role === 'admin'
 
@@ -143,9 +162,32 @@ export default function App() {
   if (loadingAuth) {
     return (
       <div style={styles.loadingPage}>
-        <p>Chargement...</p>
-        <button onClick={() => window.location.reload()}>
-          Actualiser
+        <p style={styles.loadingText}>Chargement...</p>
+
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem('assistant_session')
+            window.location.reload()
+          }}
+          style={styles.reloadButton}
+        >
+          Réinitialiser et actualiser
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem('assistant_session')
+            setLoadingAuth(false)
+            setSession(null)
+            setProfile(null)
+            setAssistantSession(null)
+            setAuthPage('login')
+          }}
+          style={styles.resetButton}
+        >
+          Aller à la connexion
         </button>
       </div>
     )
@@ -155,9 +197,10 @@ export default function App() {
     if (authPage === 'assistant-login') {
       return (
         <AssistantLoginPage
-          onLoginSuccess={(data) => {
-            localStorage.setItem('assistant_session', JSON.stringify(data))
-            setAssistantSession(data)
+          onLoginSuccess={(assistantData) => {
+            localStorage.setItem('assistant_session', JSON.stringify(assistantData))
+            setAssistantSession(assistantData)
+            setAuthPage('login')
             setPage('home')
           }}
           onBack={() => setAuthPage('login')}
@@ -175,31 +218,102 @@ export default function App() {
   if (session && !profile) {
     return (
       <div style={styles.loadingPage}>
-        <p>Chargement profil...</p>
-        <button onClick={logout}>Reset</button>
+        <p style={styles.loadingText}>Chargement profil...</p>
+
+        <button
+          type="button"
+          onClick={logout}
+          style={styles.resetButton}
+        >
+          Réinitialiser session
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSession(null)
+            setProfile(null)
+            setLoadingAuth(false)
+            setAuthPage('login')
+          }}
+          style={styles.reloadButton}
+        >
+          Retour connexion
+        </button>
       </div>
     )
   }
 
   function renderPage() {
-    switch (page) {
-      case 'home':
-        return <HomePage onNavigate={setPage} profile={activeProfile} onLogout={logout} />
-      case 'classes':
-        return isAdmin ? <ClassesPage profile={activeProfile} /> : <HomePage onNavigate={setPage} profile={activeProfile} />
-      case 'students':
-        return <StudentsPage profile={activeProfile} />
-      case 'couples':
-        return <CouplesPage profile={activeProfile} />
-      case 'seances':
-        return <SeancesPage profile={activeProfile} />
-      case 'paiements':
-        return <PaiementsPage profile={activeProfile} />
-      case 'bilans':
-        return <BilansPage profile={activeProfile} />
-      default:
-        return <HomePage onNavigate={setPage} profile={activeProfile} />
+    if (page === 'home') {
+      return (
+        <HomePage
+          onNavigate={setPage}
+          profile={activeProfile}
+          onLogout={logout}
+        />
+      )
     }
+
+    if (page === 'classes') {
+      if (!isAdmin) {
+        return (
+          <HomePage
+            onNavigate={setPage}
+            profile={activeProfile}
+            onLogout={logout}
+          />
+        )
+      }
+
+      return <ClassesPage profile={activeProfile} />
+    }
+
+    if (page === 'students') {
+      return <StudentsPage profile={activeProfile} />
+    }
+
+    if (page === 'couples') {
+      return <CouplesPage profile={activeProfile} />
+    }
+
+    if (page === 'seances') {
+      return <SeancesPage profile={activeProfile} />
+    }
+
+    if (page === 'paiements') {
+      return <PaiementsPage profile={activeProfile} />
+    }
+
+    if (page === 'bilans') {
+      return <BilansPage profile={activeProfile} />
+    }
+
+    if (page === 'create-assistant') {
+      if (!isAdmin) {
+        return (
+          <HomePage
+            onNavigate={setPage}
+            profile={activeProfile}
+            onLogout={logout}
+          />
+        )
+      }
+
+      return (
+        <div style={styles.infoBox}>
+          Les assistants se connectent maintenant avec le code et le mot de passe de leur classe.
+        </div>
+      )
+    }
+
+    return (
+      <HomePage
+        onNavigate={setPage}
+        profile={activeProfile}
+        onLogout={logout}
+      />
+    )
   }
 
   return (
@@ -228,12 +342,43 @@ const styles = {
   content: {
     paddingBottom: 30,
   },
+  infoBox: {
+    padding: 20,
+    textAlign: 'center',
+    color: '#2b0a78',
+    fontWeight: 'bold',
+  },
   loadingPage: {
     minHeight: '100vh',
     display: 'flex',
+    flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
-    flexDirection: 'column',
-    gap: 10,
+    gap: 12,
+    background: '#f7f1fb',
+    padding: 20,
+  },
+  loadingText: {
+    margin: 0,
+    fontSize: 18,
+    color: '#666',
+  },
+  reloadButton: {
+    padding: '12px 18px',
+    borderRadius: 12,
+    border: 'none',
+    background: '#2b0a78',
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  resetButton: {
+    padding: '12px 18px',
+    borderRadius: 12,
+    border: 'none',
+    background: '#d91e18',
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 }
