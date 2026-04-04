@@ -92,32 +92,6 @@ export default function StudentDetailPage({ studentId, onBack }) {
     return (student?.contribution_avance || 0) >= blocs
   }
 
-  function downloadQr() {
-    const svg = qrWrapperRef.current?.querySelector('svg')
-
-    if (!svg || !student?.matricule) {
-      setMessage('QR introuvable')
-      return
-    }
-
-    const serializer = new XMLSerializer()
-    const svgString = serializer.serializeToString(svg)
-    const blob = new Blob([svgString], {
-      type: 'image/svg+xml;charset=utf-8',
-    })
-    const url = URL.createObjectURL(blob)
-
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `qr-${student.matricule}.svg`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    URL.revokeObjectURL(url)
-    setMessage('QR téléchargé')
-  }
-
   function getStatutSeance(seanceId) {
     if (presences[seanceId] === 'present') return 'Présent'
     if (presences[seanceId] === 'absent') return 'Absent'
@@ -134,6 +108,56 @@ export default function StudentDetailPage({ studentId, onBack }) {
     }
 
     return styles.seanceNeutral
+  }
+
+  function downloadQr() {
+    const svg = qrWrapperRef.current?.querySelector('svg')
+
+    if (!svg || !student?.matricule) {
+      setMessage('QR introuvable')
+      return
+    }
+
+    const serializer = new XMLSerializer()
+    const svgString = serializer.serializeToString(svg)
+    const svgBlob = new Blob([svgString], {
+      type: 'image/svg+xml;charset=utf-8',
+    })
+    const svgUrl = URL.createObjectURL(svgBlob)
+
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      const size = 1000
+      canvas.width = size
+      canvas.height = size
+
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, size, size)
+
+      ctx.drawImage(image, 0, 0, size, size)
+
+      URL.revokeObjectURL(svgUrl)
+
+      const pngUrl = canvas.toDataURL('image/png')
+
+      const link = document.createElement('a')
+      link.href = pngUrl
+      link.download = `qr-${student.matricule}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      setMessage('QR téléchargé en PNG')
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(svgUrl)
+      setMessage('Erreur conversion QR')
+    }
+
+    image.src = svgUrl
   }
 
   if (!student) {
@@ -183,6 +207,10 @@ export default function StudentDetailPage({ studentId, onBack }) {
         </p>
 
         <p style={styles.meta}>
+          <strong>Signature :</strong> {student.signature || '-'}
+        </p>
+
+        <p style={styles.meta}>
           <strong>Inscription :</strong> {student.inscription_paye ? 'Payée' : 'Non payée'}
         </p>
 
@@ -205,7 +233,7 @@ export default function StudentDetailPage({ studentId, onBack }) {
             <div ref={qrWrapperRef} style={styles.qrCard}>
               <QRCodeSVG
                 value={student.matricule.trim()}
-                size={240}
+                size={320}
                 bgColor="#ffffff"
                 fgColor="#000000"
                 level="H"
@@ -222,6 +250,10 @@ export default function StudentDetailPage({ studentId, onBack }) {
             >
               Télécharger le QR
             </button>
+
+            <p style={styles.qrHelp}>
+              Utilise un autre appareil pour scanner ce QR.
+            </p>
           </div>
         ) : (
           <p style={styles.emptyText}>Aucun matricule trouvé.</p>
@@ -359,10 +391,13 @@ const styles = {
 
   qrCard: {
     background: '#ffffff',
-    padding: 18,
+    padding: 24,
     borderRadius: 18,
     border: '2px solid #eadcf9',
     boxShadow: '0 8px 18px rgba(43, 10, 120, 0.08)',
+    display: 'inline-flex',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   qrText: {
@@ -371,6 +406,13 @@ const styles = {
     color: '#2b0a78',
     textAlign: 'center',
     wordBreak: 'break-word',
+  },
+
+  qrHelp: {
+    margin: 0,
+    color: '#6f5b84',
+    fontSize: 14,
+    textAlign: 'center',
   },
 
   downloadButton: {

@@ -16,6 +16,8 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   const [editingRapport, setEditingRapport] = useState(true)
 
   const qrRef = useRef(null)
+  const lastScannedRef = useRef('')
+  const lastScannedAtRef = useRef(0)
 
   useEffect(() => {
     loadSeanceData()
@@ -173,22 +175,50 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   async function startScanner() {
     if (scannerStarted) return
 
-    const scanner = new Html5Qrcode('qr-reader')
-    qrRef.current = scanner
+    setMessage('')
 
     try {
+      if (qrRef.current) {
+        try {
+          await qrRef.current.stop()
+          await qrRef.current.clear()
+        } catch (error) {
+          console.log(error)
+        }
+        qrRef.current = null
+      }
+
+      const scanner = new Html5Qrcode('qr-reader')
+      qrRef.current = scanner
+
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: 220 },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1,
+          disableFlip: false,
+        },
         async (decodedText) => {
           const code = (decodedText || '').trim()
+          const now = Date.now()
+
+          if (
+            lastScannedRef.current === code &&
+            now - lastScannedAtRef.current < 2500
+          ) {
+            return
+          }
+
+          lastScannedRef.current = code
+          lastScannedAtRef.current = now
 
           const student = students.find(
             (s) => (s.matricule || '').trim().toLowerCase() === code.toLowerCase()
           )
 
           if (!student) {
-            setMessage('QR non reconnu pour cette classe')
+            setMessage(`QR non reconnu : ${code}`)
             return
           }
 
@@ -209,10 +239,18 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   }
 
   async function stopScanner() {
-    if (!qrRef.current) return
+    if (!qrRef.current) {
+      setScannerStarted(false)
+      return
+    }
 
     try {
       await qrRef.current.stop()
+    } catch (error) {
+      console.log(error)
+    }
+
+    try {
       await qrRef.current.clear()
     } catch (error) {
       console.log(error)
@@ -328,7 +366,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
-          <button style={styles.backButton} onClick={onBack}>
+          <button type="button" style={styles.backButton} onClick={onBack}>
             ← Retour
           </button>
           <p>Chargement...</p>
@@ -340,7 +378,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <button style={styles.backButton} onClick={onBack}>
+        <button type="button" style={styles.backButton} onClick={onBack}>
           ← Retour aux séances
         </button>
 
@@ -388,6 +426,10 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
         {pointageMode === 'qr' && (
           <div style={styles.innerCard}>
             <h3 style={styles.sectionTitle}>Pointage par QR</h3>
+
+            <p style={styles.helpText}>
+              Scanne un QR affiché sur un autre téléphone ou sur une image nette.
+            </p>
 
             <div id="qr-reader" style={styles.qrReader}></div>
 
@@ -673,6 +715,15 @@ const styles = {
     color: '#6f5b84',
     textAlign: 'center',
     fontSize: 24,
+  },
+
+  helpText: {
+    marginTop: 0,
+    marginBottom: 12,
+    textAlign: 'center',
+    color: '#6f5b84',
+    fontSize: 14,
+    lineHeight: 1.5,
   },
 
   modeSelector: {
