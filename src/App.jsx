@@ -15,7 +15,7 @@ import PortalPage from './pages/PortalPage'
 import LoginPage from './pages/LoginPage'
 import MainMenu from './components/MainMenu'
 
-function withTimeout(promise, ms = 4000) {
+function withTimeout(promise, ms = 10000) {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
@@ -32,6 +32,7 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [assistantSession, setAssistantSession] = useState(null)
   const [loadingAuth, setLoadingAuth] = useState(true)
+  const [authError, setAuthError] = useState('')
 
   useEffect(() => {
     let active = true
@@ -50,8 +51,9 @@ export default function App() {
     async function initAuth() {
       try {
         setLoadingAuth(true)
+        setAuthError('')
 
-        const result = await withTimeout(supabase.auth.getSession(), 4000)
+        const result = await withTimeout(supabase.auth.getSession(), 10000)
         const currentSession = result?.data?.session || null
 
         if (!active) return
@@ -70,8 +72,7 @@ export default function App() {
 
         if (!active) return
 
-        setSession(null)
-        setProfile(null)
+        setAuthError('Impossible de vérifier la session pour le moment.')
       } finally {
         if (active) {
           setLoadingAuth(false)
@@ -87,6 +88,7 @@ export default function App() {
       if (!active) return
 
       try {
+        setAuthError('')
         setSession(newSession || null)
 
         if (newSession?.user?.id) {
@@ -99,7 +101,7 @@ export default function App() {
       } catch (error) {
         console.log('onAuthStateChange error:', error)
         if (!active) return
-        setProfile(null)
+        setAuthError('Erreur pendant la mise à jour de la session.')
       } finally {
         if (active) {
           setLoadingAuth(false)
@@ -121,7 +123,7 @@ export default function App() {
           .select('*')
           .eq('id', userId)
           .maybeSingle(),
-        4000
+        10000
       )
 
       if (error) {
@@ -150,6 +152,15 @@ export default function App() {
     setPage('home')
     setAuthPage('login')
     setLoadingAuth(false)
+    setAuthError('')
+  }
+
+  function resetAssistantOnly() {
+    localStorage.removeItem('assistant_session')
+    setAssistantSession(null)
+    setAuthPage('login')
+    setPage('home')
+    setAuthError('')
   }
 
   const activeProfile = session ? profile : assistantSession || null
@@ -164,30 +175,25 @@ export default function App() {
       <div style={styles.loadingPage}>
         <p style={styles.loadingText}>Chargement...</p>
 
+        {authError ? <p style={styles.errorText}>{authError}</p> : null}
+
         <button
           type="button"
-          onClick={() => {
-            localStorage.removeItem('assistant_session')
-            window.location.reload()
-          }}
+          onClick={() => window.location.reload()}
           style={styles.reloadButton}
         >
-          Réinitialiser et actualiser
+          Actualiser
         </button>
 
         <button
           type="button"
           onClick={() => {
-            localStorage.removeItem('assistant_session')
             setLoadingAuth(false)
-            setSession(null)
-            setProfile(null)
-            setAssistantSession(null)
             setAuthPage('login')
           }}
-          style={styles.resetButton}
+          style={styles.secondaryButton}
         >
-          Aller à la connexion
+          Continuer vers la connexion
         </button>
       </div>
     )
@@ -202,6 +208,7 @@ export default function App() {
             setAssistantSession(assistantData)
             setAuthPage('login')
             setPage('home')
+            setAuthError('')
           }}
           onBack={() => setAuthPage('login')}
         />
@@ -220,25 +227,22 @@ export default function App() {
       <div style={styles.loadingPage}>
         <p style={styles.loadingText}>Chargement profil...</p>
 
+        {authError ? <p style={styles.errorText}>{authError}</p> : null}
+
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={styles.reloadButton}
+        >
+          Actualiser
+        </button>
+
         <button
           type="button"
           onClick={logout}
           style={styles.resetButton}
         >
           Réinitialiser session
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSession(null)
-            setProfile(null)
-            setLoadingAuth(false)
-            setAuthPage('login')
-          }}
-          style={styles.reloadButton}
-        >
-          Retour connexion
         </button>
       </div>
     )
@@ -324,7 +328,7 @@ export default function App() {
             currentPage={page}
             onChangePage={setPage}
             profile={activeProfile}
-            onLogout={logout}
+            onLogout={session ? logout : resetAssistantOnly}
           />
         )}
 
@@ -363,12 +367,28 @@ const styles = {
     fontSize: 18,
     color: '#666',
   },
+  errorText: {
+    margin: 0,
+    fontSize: 15,
+    color: '#d91e18',
+    textAlign: 'center',
+    maxWidth: 320,
+  },
   reloadButton: {
     padding: '12px 18px',
     borderRadius: 12,
     border: 'none',
     background: '#2b0a78',
     color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  secondaryButton: {
+    padding: '12px 18px',
+    borderRadius: 12,
+    border: '2px solid #d8c8ef',
+    background: '#fff',
+    color: '#2b0a78',
     fontWeight: 'bold',
     fontSize: 16,
   },
