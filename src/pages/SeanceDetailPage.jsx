@@ -194,8 +194,8 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       await scanner.start(
         { facingMode: 'environment' },
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
+          fps: 6,
+          qrbox: { width: 300, height: 300 },
           aspectRatio: 1,
           disableFlip: false,
         },
