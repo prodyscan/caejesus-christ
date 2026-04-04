@@ -337,23 +337,35 @@ export default function PaiementsPage({ profile }) {
     return INSCRIPTION_MONTANT > paid ? INSCRIPTION_MONTANT - paid : 0
   }
 
+// Commentaire
   function getStudentFinanceStatus(studentId) {
     const inscriptionPaid = getStudentInscriptionPaid(studentId)
     const contributionPaid = getStudentContributionPaid(studentId)
     const inscriptionExpected = INSCRIPTION_MONTANT
     const contributionExpected = getStudentContributionExpected(studentId)
 
-    const totalPaid = inscriptionPaid + contributionPaid
-    const totalExpected = inscriptionExpected + contributionExpected
+    const inscriptionOk = inscriptionPaid >= inscriptionExpected
+    const contributionOk = contributionPaid >= contributionExpected
 
-    if (totalPaid > totalExpected) return 'En avance'
-    if (totalPaid === totalExpected) return 'À jour'
+    if (inscriptionOk && contributionPaid > contributionExpected) {
+      return 'En avance'
+    }
+
+    if (inscriptionOk && contributionOk) {
+      return 'À jour'
+    }
+
+    if (inscriptionPaid > 0 || contributionPaid > 0) {
+      return 'Partiel'
+    }
+
     return 'En retard'
   }
-
+// Commentaire
   function getStatusColor(status) {
     if (status === 'En avance') return '#1b8f3a'
     if (status === 'À jour') return '#b07a00'
+    if (status === 'Partiel') return '#1565c0'
     return '#d91e18'
   }
 

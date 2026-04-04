@@ -9,6 +9,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   const [paiements, setPaiements] = useState([])
   const [temoignage, setTemoignage] = useState('')
   const [matriculeInput, setMatriculeInput] = useState('')
+  const [search, setSearch] = useState('')
   const [message, setMessage] = useState('')
   const [loadingRapport, setLoadingRapport] = useState(false)
   const [scannerStarted, setScannerStarted] = useState(false)
@@ -198,6 +199,10 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       [student.id]: 'present',
     }))
 
+    if (navigator.vibrate) {
+      navigator.vibrate(150)
+    }
+
     return true
   }
 
@@ -268,7 +273,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
         },
         async (decodedText) => {
           const raw = String(decodedText || '').trim()
-          const code = extractMatriculeFromQr(raw)
           const now = Date.now()
 
           setScanDebug(`QR lu : ${raw}`)
@@ -283,7 +287,11 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           lastScannedRef.current = raw
           lastScannedAtRef.current = now
 
-          const student = findStudentByMatricule(raw)
+          const code = extractMatriculeFromQr(raw).toLowerCase()
+
+          const student = students.find(
+            (s) => (s.matricule || '').trim().toLowerCase() === code
+          )
 
           if (!student) {
             setMessage(`QR lu mais matricule non reconnu : ${code}`)
@@ -417,15 +425,22 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   }
 
   function buildContributionLines() {
-    const contributions = getContributionsOfDay()
+    const grouped = {}
 
-    if (contributions.length === 0) {
+    getContributionsOfDay().forEach((item) => {
+      const key = item.student_id
+      grouped[key] = (grouped[key] || 0) + Number(item.montant || 0)
+    })
+
+    const lines = Object.entries(grouped).map(([studentId, montant]) => {
+      return `${getStudentFullName(Number(studentId))} : ${montant} FCFA`
+    })
+
+    if (lines.length === 0) {
       return ['Aucune contribution enregistrée']
     }
 
-    return contributions.map((item) => {
-      return `${getStudentFullName(item.student_id)} : ${Number(item.montant || 0)} FCFA`
-    })
+    return lines
   }
 
   function getTotalContribution() {
@@ -442,12 +457,16 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     )
   }
 
+  function getTotalGeneral() {
+    return getTotalInscription() + getTotalContribution()
+  }
+
   function buildShareContent() {
     const presents = getPresentStudents().length
     const totalStudents = students.length
     const contributionLines = buildContributionLines()
-    const totalContribution = getTotalContribution()
     const totalInscription = getTotalInscription()
+    const totalGeneral = getTotalGeneral()
 
     const centreLabel = `${seance?.classes?.nom || '-'} ${getYearLabel(seance?.classes?.annee)}`
     const seanceLine1 =
@@ -476,7 +495,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       '*Contribution:*',
       ...contributionLines,
       '',
-      `*Total :* ${totalContribution} FCFA`,
+      `*Total :* ${totalGeneral} FCFA`,
       '',
       '*Témoignages :*',
       '',
@@ -514,6 +533,16 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   function getNonPointesCount() {
     return students.length - getPresentsCount() - getAbsentsCount()
   }
+
+  const filteredStudents = students.filter((s) => {
+    const fullName = `${s.nom || ''} ${s.prenom || ''}`.toLowerCase()
+    const matricule = (s.matricule || '').toLowerCase()
+    const query = search.toLowerCase().trim()
+
+    if (!query) return true
+
+    return fullName.includes(query) || matricule.includes(query)
+  })
 
   if (!seance) {
     return (
@@ -623,10 +652,17 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           <div style={styles.innerCard}>
             <h3 style={styles.sectionTitle}>Pointage manuel</h3>
 
-            {students.length === 0 ? (
-              <p>Aucun étudiant lié à cette classe.</p>
+            <input
+              style={styles.input}
+              placeholder="Rechercher nom ou matricule..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+
+            {filteredStudents.length === 0 ? (
+              <p>Aucun étudiant trouvé.</p>
             ) : (
-              students.map((student) => {
+              filteredStudents.map((student) => {
                 const statut = presences[student.id] || 'non_pointe'
 
                 return (
