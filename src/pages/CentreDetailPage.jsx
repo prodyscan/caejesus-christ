@@ -2,39 +2,39 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import SeanceDetailPage from './SeanceDetailPage'
 
-export default function ClassDetailPage({ classId, onBack }) {
-  const [classe, setClasse] = useState(null)
+export default function CentreDetailPage({ classId, onBack }) {
+  const [centre, setCentre] = useState(null)
   const [seances, setSeances] = useState([])
   const [selectedSeanceId, setSelectedSeanceId] = useState(null)
   const [searchSeance, setSearchSeance] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    loadClassData()
+    loadCentreData()
   }, [classId])
 
-  async function loadClassData() {
+  async function loadCentreData() {
     setMessage('')
 
-    const { data: classeData, error: classeError } = await supabase
+    const { data: centreData, error: centreError } = await supabase
       .from('classes')
       .select('*')
       .eq('id', classId)
       .single()
 
-    if (classeError) {
-      console.log(classeError)
-      setMessage('Erreur chargement classe')
+    if (centreError) {
+      console.log(centreError)
+      setMessage('Erreur chargement centre')
       return
     }
 
-    setClasse(classeData)
+    setCentre(centreData)
 
     const { data: seancesData, error: seancesError } = await supabase
       .from('seances')
       .select('*')
       .eq('class_id', classId)
-      .order('numero_seance', { ascending: true })
+      .order('date_seance', { ascending: true })
 
     if (seancesError) {
       console.log(seancesError)
@@ -53,7 +53,6 @@ export default function ClassDetailPage({ classId, onBack }) {
     return seances.filter((seance) => {
       const text = [
         seance.chapitre || '',
-        String(seance.numero_seance || ''),
         seance.date_seance || '',
       ]
         .join(' ')
@@ -69,7 +68,7 @@ export default function ClassDetailPage({ classId, onBack }) {
         seanceId={selectedSeanceId}
         onBack={() => {
           setSelectedSeanceId(null)
-          loadClassData()
+          loadCentreData()
         }}
       />
     )
@@ -78,26 +77,34 @@ export default function ClassDetailPage({ classId, onBack }) {
   return (
     <div style={styles.page}>
       <button type="button" style={styles.backButton} onClick={onBack}>
-        ← Retour aux classes
+        ← Retour aux centres
       </button>
 
       <div style={styles.card}>
-        <h2 style={styles.title}>{classe?.nom || 'Classe'}</h2>
+        <h2 style={styles.title}>{centre?.nom || 'Centre'}</h2>
 
-        <p style={styles.meta}><strong>Année :</strong> {classe?.annee || '-'}</p>
-        <p style={styles.meta}><strong>Pays :</strong> {classe?.pays || '-'}</p>
-        <p style={styles.meta}><strong>Ville :</strong> {classe?.ville || '-'}</p>
-        <p style={styles.meta}><strong>Assistant :</strong> {classe?.assistant_nom || '-'}</p>
+        <p style={styles.meta}>
+          <strong>Année :</strong> {centre?.annee || '-'}
+        </p>
+        <p style={styles.meta}>
+          <strong>Pays :</strong> {centre?.pays || '-'}
+        </p>
+        <p style={styles.meta}>
+          <strong>Ville :</strong> {centre?.ville || '-'}
+        </p>
+        <p style={styles.meta}>
+          <strong>Assistant :</strong> {centre?.assistant_nom || '-'}
+        </p>
 
         {message ? <p style={styles.message}>{message}</p> : null}
       </div>
 
       <div style={styles.card}>
-        <h3 style={styles.sectionTitle}>Séances de la classe</h3>
+        <h3 style={styles.sectionTitle}>Séances du centre</h3>
 
         <input
           style={styles.input}
-          placeholder="Chercher une séance par chapitre, numéro ou date..."
+          placeholder="Chercher une séance par chapitre ou date..."
           value={searchSeance}
           onChange={(e) => setSearchSeance(e.target.value)}
         />
@@ -115,7 +122,6 @@ export default function ClassDetailPage({ classId, onBack }) {
                 {seance.chapitre || '-'}
               </strong>
 
-              <p style={styles.meta}>Numéro : {seance.numero_seance || '-'}</p>
               <p style={styles.meta}>Date : {seance.date_seance || '-'}</p>
 
               <div style={styles.row}>
@@ -203,6 +209,7 @@ const styles = {
   itemTitle: {
     color: '#2b0a78',
     fontSize: 20,
+    whiteSpace: 'pre-wrap',
   },
   meta: {
     margin: '6px 0',

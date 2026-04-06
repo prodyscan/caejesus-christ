@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
+import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 export default function SeanceDetailPage({ seanceId, onBack }) {
@@ -7,29 +6,19 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   const [students, setStudents] = useState([])
   const [presences, setPresences] = useState({})
   const [paiements, setPaiements] = useState([])
-  const [temoignage, setTemoignage] = useState('')
-  const [matriculeInput, setMatriculeInput] = useState('')
   const [search, setSearch] = useState('')
+  const [matriculeInput, setMatriculeInput] = useState('')
   const [message, setMessage] = useState('')
-  const [loadingRapport, setLoadingRapport] = useState(false)
-  const [scannerStarted, setScannerStarted] = useState(false)
   const [pointageMode, setPointageMode] = useState('matricule')
+  const [temoignage, setTemoignage] = useState('')
+  const [loadingRapport, setLoadingRapport] = useState(false)
   const [editingRapport, setEditingRapport] = useState(true)
-  const [scanDebug, setScanDebug] = useState('')
-
-  const qrRef = useRef(null)
-  const lastScannedRef = useRef('')
-  const lastScannedAtRef = useRef(0)
 
   useEffect(() => {
-    loadSeanceData()
-
-    return () => {
-      stopScanner()
-    }
+    loadData()
   }, [seanceId])
 
-  async function loadSeanceData() {
+  async function loadData() {
     setMessage('')
 
     const { data: seanceData, error: seanceError } = await supabase
@@ -63,9 +52,10 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     if (studentsError) {
       console.log(studentsError)
       setMessage('Erreur chargement étudiants')
-    } else {
-      setStudents(studentsData || [])
+      return
     }
+
+    setStudents(studentsData || [])
 
     const { data: presencesData, error: presencesError } = await supabase
       .from('presences')
@@ -74,14 +64,15 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
 
     if (presencesError) {
       console.log(presencesError)
-      setMessage('Erreur chargement pointage')
-    } else {
-      const map = {}
-      ;(presencesData || []).forEach((item) => {
-        map[item.student_id] = item.statut
-      })
-      setPresences(map)
+      setMessage('Erreur chargement présences')
+      return
     }
+
+    const map = {}
+    ;(presencesData || []).forEach((item) => {
+      map[item.student_id] = item.statut
+    })
+    setPresences(map)
 
     const studentIds = (studentsData || []).map((s) => s.id)
 
@@ -119,40 +110,14 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   }
 
   function normalizeText(value) {
-    return (value || '')
-      .replace(/\n/g, '')
-      .replace(/\r/g, '')
-      .replace(/\t/g, '')
-      .trim()
-      .toLowerCase()
+    return String(value || '').trim().toLowerCase()
   }
 
-  function extractMatriculeFromQr(rawText) {
-    if (!rawText) return ''
-
-    const clean = String(rawText).trim()
-
-    try {
-      const parsed = JSON.parse(clean)
-      if (parsed?.matricule) {
-        return String(parsed.matricule).trim()
-      }
-    } catch (_) {}
-
-    const match = clean.match(/matricule\s*[:=-]\s*([A-Za-z0-9_-]+)/i)
-    if (match?.[1]) {
-      return match[1].trim()
-    }
-
-    return clean
-  }
-
-  function findStudentByMatricule(rawCode) {
-    const matricule = extractMatriculeFromQr(rawCode)
-    const normalizedCode = normalizeText(matricule)
+  function findStudentByMatricule(code) {
+    const searchCode = normalizeText(code)
 
     return students.find(
-      (s) => normalizeText(s.matricule) === normalizedCode
+      (student) => normalizeText(student.matricule) === searchCode
     )
   }
 
@@ -180,36 +145,10 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     setMessage('Pointage enregistré')
   }
 
-  async function markStudentPresent(student) {
-    const { error } = await supabase
-      .from('presences')
-      .upsert(
-        [{ seance_id: seanceId, student_id: student.id, statut: 'present' }],
-        { onConflict: 'seance_id,student_id' }
-      )
-
-    if (error) {
-      console.log(error)
-      setMessage('Erreur pointage')
-      return false
-    }
-
-    setPresences((prev) => ({
-      ...prev,
-      [student.id]: 'present',
-    }))
-
-    if (navigator.vibrate) {
-      navigator.vibrate(150)
-    }
-
-    return true
-  }
-
   async function markByMatricule(e) {
     e.preventDefault()
 
-    const code = (matriculeInput || '').trim()
+    const code = matriculeInput.trim()
 
     if (!code) {
       setMessage('Entre un matricule')
@@ -219,121 +158,13 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     const student = findStudentByMatricule(code)
 
     if (!student) {
-      setMessage('Aucun étudiant trouvé avec ce matricule dans cette classe')
+      setMessage('Aucun étudiant trouvé avec ce matricule')
       return
     }
 
-    const ok = await markStudentPresent(student)
-    if (!ok) return
-
+    await markPresence(student.id, 'present')
     setMatriculeInput('')
     setMessage(`Présence validée : ${student.nom} ${student.prenom}`)
-  }
-
-  async function startScanner() {
-    if (scannerStarted) return
-
-    setMessage('')
-    setScanDebug('')
-
-    try {
-      if (qrRef.current) {
-        try {
-          await qrRef.current.stop()
-        } catch (error) {
-          console.log(error)
-        }
-
-        try {
-          await qrRef.current.clear()
-        } catch (error) {
-          console.log(error)
-        }
-
-        qrRef.current = null
-      }
-
-      const scanner = new Html5Qrcode('qr-reader', {
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        verbose: false,
-      })
-
-      qrRef.current = scanner
-
-      await scanner.start(
-        { facingMode: { ideal: 'environment' } },
-        {
-          fps: 15,
-          qrbox: { width: 280, height: 280 },
-          aspectRatio: 1,
-          disableFlip: false,
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
-        },
-        async (decodedText) => {
-          const raw = String(decodedText || '').trim()
-          const now = Date.now()
-
-          setScanDebug(`QR lu : ${raw}`)
-
-          if (
-            lastScannedRef.current === raw &&
-            now - lastScannedAtRef.current < 2500
-          ) {
-            return
-          }
-
-          lastScannedRef.current = raw
-          lastScannedAtRef.current = now
-
-          const code = extractMatriculeFromQr(raw).toLowerCase()
-
-          const student = students.find(
-            (s) => (s.matricule || '').trim().toLowerCase() === code
-          )
-
-          if (!student) {
-            setMessage(`QR lu mais matricule non reconnu : ${code}`)
-            return
-          }
-
-          const ok = await markStudentPresent(student)
-          if (!ok) return
-
-          setMessage(`Présence validée : ${student.nom} ${student.prenom}`)
-        },
-        () => {}
-      )
-
-      setScannerStarted(true)
-      setMessage('Scanner QR démarré')
-    } catch (error) {
-      console.log(error)
-      setMessage('Impossible de démarrer la caméra QR')
-    }
-  }
-
-  async function stopScanner() {
-    if (!qrRef.current) {
-      setScannerStarted(false)
-      return
-    }
-
-    try {
-      await qrRef.current.stop()
-    } catch (error) {
-      console.log(error)
-    }
-
-    try {
-      await qrRef.current.clear()
-    } catch (error) {
-      console.log(error)
-    }
-
-    qrRef.current = null
-    setScannerStarted(false)
   }
 
   async function saveRapport() {
@@ -417,7 +248,25 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   function getInscriptionsOfDay() {
     return paiements.filter((p) => p.type_paiement === 'inscription')
   }
+  function getNombreHommes() {
+    return students.filter((s) => s.sexe === 'homme').length
+  }
 
+  function getNombreFemmes() {
+    return students.filter((s) => s.sexe === 'femme').length
+  }
+
+  function getHommesPresents() {
+    return students.filter(
+      (s) => s.sexe === 'homme' && presences[s.id] === 'present'
+    ).length
+  }
+
+  function getFemmesPresents() {
+    return students.filter(
+      (s) => s.sexe === 'femme' && presences[s.id] === 'present'
+    ).length
+  }
   function getStudentFullName(studentId) {
     const student = students.find((s) => s.id === studentId)
     if (!student) return 'Étudiant inconnu'
@@ -460,7 +309,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   function getTotalGeneral() {
     return getTotalInscription() + getTotalContribution()
   }
-
   function buildShareContent() {
     const presents = getPresentStudents().length
     const totalStudents = students.length
@@ -469,14 +317,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     const totalGeneral = getTotalGeneral()
 
     const centreLabel = `${seance?.classes?.nom || '-'} ${getYearLabel(seance?.classes?.annee)}`
-    const seanceLine1 =
-      seance?.titre ||
-      seance?.theme ||
-      seance?.direction ||
-      seance?.libelle ||
-      'Direction'
-
-    const seanceLine2 = `Séance ${seance?.numero_seance || '-'}: ${seance?.chapitre || '-'}`
+    const seanceLine = seance?.chapitre || '-'
 
     return [
       '*Rapport les Écoles et Universités de la Connaissance de JÉSUS-CHRIST*',
@@ -485,8 +326,8 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       '',
       `*CENTRE*: *${centreLabel}*`,
       '',
-      `*Séance:* ${seanceLine1}`,
-      `*${seanceLine2}*`,
+      '*Séance :*',
+      `${seanceLine}`,
       '',
       `*Effectifs :* ${presents}/${totalStudents}`,
       '',
@@ -507,12 +348,35 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   }
 
   async function copyRapportEtTemoignage() {
+    const text = buildShareContent()
+
     try {
-      await navigator.clipboard.writeText(buildShareContent())
-      setMessage('Rapport copié')
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        setMessage('Rapport copié')
+        return
+      }
+
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      textarea.style.top = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+
+      const ok = document.execCommand('copy')
+      document.body.removeChild(textarea)
+
+      if (ok) {
+        setMessage('Rapport copié')
+      } else {
+        setMessage('Copie impossible sur cet appareil')
+      }
     } catch (error) {
       console.log(error)
-      setMessage('Impossible de copier automatiquement')
+      setMessage('Copie impossible sur cet appareil')
     }
   }
 
@@ -534,12 +398,12 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     return students.length - getPresentsCount() - getAbsentsCount()
   }
 
-  const filteredStudents = students.filter((s) => {
-    const fullName = `${s.nom || ''} ${s.prenom || ''}`.toLowerCase()
-    const matricule = (s.matricule || '').toLowerCase()
-    const query = search.toLowerCase().trim()
-
+  const filteredStudents = students.filter((student) => {
+    const query = search.trim().toLowerCase()
     if (!query) return true
+
+    const fullName = `${student.nom || ''} ${student.prenom || ''}`.toLowerCase()
+    const matricule = (student.matricule || '').toLowerCase()
 
     return fullName.includes(query) || matricule.includes(query)
   })
@@ -552,6 +416,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
             ← Retour
           </button>
           <p>Chargement...</p>
+          {message ? <p style={styles.message}>{message}</p> : null}
         </div>
       </div>
     )
@@ -564,31 +429,22 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           ← Retour aux séances
         </button>
 
-        <h2 style={styles.title}>{seance.chapitre}</h2>
+        <h2 style={styles.title}>Détail séance</h2>
 
         <div style={styles.infoBox}>
-          <p><strong>Classe :</strong> {seance.classes?.nom || '-'}</p>
+          <p><strong>Séance :</strong> {seance.chapitre || '-'}</p>
+          <p><strong>Centre :</strong> {seance.classes?.nom || '-'}</p>
           <p><strong>Année :</strong> {seance.classes?.annee || '-'}</p>
           <p><strong>Date :</strong> {seance.date_seance || '-'}</p>
-          <p><strong>Numéro séance :</strong> {seance.numero_seance || '-'}</p>
         </div>
 
         {message ? <p style={styles.message}>{message}</p> : null}
-        {scanDebug ? <p style={styles.debug}>{scanDebug}</p> : null}
       </div>
 
       <div style={styles.card}>
-        <h3 style={styles.pointageTitle}>Méthode de pointage</h3>
+        <h3 style={styles.sectionTitle}>Méthode de pointage</h3>
 
         <div style={styles.modeSelector}>
-          <button
-            type="button"
-            onClick={() => setPointageMode('qr')}
-            style={pointageMode === 'qr' ? styles.modeButtonActive : styles.modeButton}
-          >
-            QR
-          </button>
-
           <button
             type="button"
             onClick={() => setPointageMode('matricule')}
@@ -605,29 +461,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
             Manuel
           </button>
         </div>
-
-        {pointageMode === 'qr' && (
-          <div style={styles.innerCard}>
-            <h3 style={styles.sectionTitle}>Pointage par QR</h3>
-
-            <p style={styles.helpText}>
-              Le QR doit contenir le matricule exact de l’étudiant,
-              ou un JSON du type {`{"matricule":"SAM2020-001"}`}.
-            </p>
-
-            <div id="qr-reader" style={styles.qrReader}></div>
-
-            <div style={styles.actionRow}>
-              <button type="button" style={styles.primaryButton} onClick={startScanner}>
-                Démarrer scanner QR
-              </button>
-
-              <button type="button" style={styles.secondaryButton} onClick={stopScanner}>
-                Arrêter scanner
-              </button>
-            </div>
-          </div>
-        )}
 
         {pointageMode === 'matricule' && (
           <div style={styles.innerCard}>
@@ -673,7 +506,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
                       </strong>
 
                       <p style={styles.meta}>Matricule : {student.matricule || '-'}</p>
-
                       <p style={styles.meta}>
                         Statut :{' '}
                         {statut === 'present'
@@ -709,6 +541,29 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
         )}
       </div>
 
+      <div style={styles.resumeGrid}>
+        <div style={styles.resumeBox}>
+          <strong>{getNombreHommes()}</strong>
+          <span>Hommes</span>
+        </div>
+
+        <div style={styles.resumeBox}>
+          <strong>{getNombreFemmes()}</strong>
+          <span>Femmes</span>
+        </div>
+
+        <div style={styles.resumeBox}>
+          <strong>{getHommesPresents()}</strong>
+          <span>Hommes présents</span>
+        </div>
+
+        <div style={styles.resumeBox}>
+          <strong>{getFemmesPresents()}</strong>
+          <span>Femmes présentes</span>
+        </div>
+      </div>
+
+
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Résumé présence</h3>
 
@@ -734,6 +589,28 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           </div>
         </div>
       </div>
+  <div style={styles.card}>
+    <h3 style={styles.sectionTitle}>Résumé financier de la séance</h3>
+
+    <div style={styles.resumeGrid}>
+      <div style={styles.resumeBox}>
+        <strong>{getTotalInscription()}</strong>
+        <span>Inscriptions</span>
+      </div>
+
+      <div style={styles.resumeBox}>
+        <strong>{getTotalContribution()}</strong>
+        <span>Contributions</span>
+      </div>
+
+      <div style={styles.resumeBox}>
+        <strong>{getTotalGeneral()}</strong>
+        <span>Total général</span>
+      </div>
+    </div>
+
+    <p style={styles.fcfaNote}>Montants en FCFA</p>
+  </div>
 
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Témoignages</h3>
@@ -816,7 +693,6 @@ const styles = {
     boxSizing: 'border-box',
     overflowX: 'hidden',
   },
-
   card: {
     background: '#ffffff',
     border: '2px solid #e3d8f5',
@@ -827,7 +703,6 @@ const styles = {
     boxSizing: 'border-box',
     overflow: 'hidden',
   },
-
   innerCard: {
     background: '#fbf8ff',
     border: '1px solid #eadcf9',
@@ -837,7 +712,6 @@ const styles = {
     boxSizing: 'border-box',
     overflow: 'hidden',
   },
-
   backButton: {
     padding: '12px 16px',
     borderRadius: 12,
@@ -847,7 +721,6 @@ const styles = {
     marginBottom: 14,
     fontWeight: 'bold',
   },
-
   title: {
     marginTop: 0,
     marginBottom: 12,
@@ -856,8 +729,8 @@ const styles = {
     fontSize: 34,
     fontWeight: 'bold',
     wordBreak: 'break-word',
+    whiteSpace: 'pre-wrap',
   },
-
   infoBox: {
     background: 'linear-gradient(180deg, #fff7fc 0%, #f7f1ff 100%)',
     border: '2px solid #eadcf9',
@@ -870,7 +743,6 @@ const styles = {
     textAlign: 'center',
     boxSizing: 'border-box',
   },
-
   message: {
     marginTop: 14,
     fontWeight: 'bold',
@@ -879,23 +751,6 @@ const styles = {
     fontSize: 18,
     wordBreak: 'break-word',
   },
-
-  debug: {
-    marginTop: 10,
-    color: '#555',
-    textAlign: 'center',
-    fontSize: 13,
-    wordBreak: 'break-word',
-  },
-
-  pointageTitle: {
-    marginTop: 0,
-    marginBottom: 14,
-    textAlign: 'center',
-    color: '#2b0a78',
-    fontSize: 28,
-  },
-
   sectionTitle: {
     marginTop: 0,
     marginBottom: 16,
@@ -903,23 +758,12 @@ const styles = {
     textAlign: 'center',
     fontSize: 24,
   },
-
-  helpText: {
-    marginTop: 0,
-    marginBottom: 12,
-    textAlign: 'center',
-    color: '#6f5b84',
-    fontSize: 14,
-    lineHeight: 1.5,
-  },
-
   modeSelector: {
     display: 'flex',
     gap: 10,
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
-
   modeButton: {
     padding: '12px 18px',
     borderRadius: 12,
@@ -928,9 +772,8 @@ const styles = {
     color: '#2b0a78',
     fontWeight: 'bold',
     fontSize: 16,
-    minWidth: 100,
+    minWidth: 120,
   },
-
   modeButtonActive: {
     padding: '12px 18px',
     borderRadius: 12,
@@ -939,9 +782,8 @@ const styles = {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
-    minWidth: 100,
+    minWidth: 120,
   },
-
   input: {
     width: '100%',
     padding: 14,
@@ -952,7 +794,6 @@ const styles = {
     boxSizing: 'border-box',
     background: '#fff',
   },
-
   textarea: {
     width: '100%',
     minHeight: 220,
@@ -965,16 +806,6 @@ const styles = {
     resize: 'vertical',
     background: '#fff',
   },
-
-  qrReader: {
-    width: '100%',
-    minHeight: 320,
-    marginBottom: 12,
-    overflow: 'hidden',
-    borderRadius: 16,
-    background: '#000',
-  },
-
   studentCard: {
     border: '1px solid #eadcf9',
     borderRadius: 14,
@@ -984,26 +815,22 @@ const styles = {
     boxSizing: 'border-box',
     overflow: 'hidden',
   },
-
   studentName: {
     color: '#2b0a78',
     fontSize: 20,
     wordBreak: 'break-word',
   },
-
   meta: {
     margin: '6px 0',
     color: '#666',
     wordBreak: 'break-word',
   },
-
   actionRow: {
     display: 'flex',
     gap: 10,
     marginTop: 12,
     flexWrap: 'wrap',
   },
-
   presentButton: {
     padding: '10px 14px',
     borderRadius: 10,
@@ -1014,7 +841,6 @@ const styles = {
     flex: 1,
     minWidth: 120,
   },
-
   absentButton: {
     padding: '10px 14px',
     borderRadius: 10,
@@ -1025,7 +851,6 @@ const styles = {
     flex: 1,
     minWidth: 120,
   },
-
   presentActive: {
     padding: '10px 14px',
     borderRadius: 10,
@@ -1036,7 +861,6 @@ const styles = {
     flex: 1,
     minWidth: 120,
   },
-
   absentActive: {
     padding: '10px 14px',
     borderRadius: 10,
@@ -1047,7 +871,6 @@ const styles = {
     flex: 1,
     minWidth: 120,
   },
-
   primaryButton: {
     flex: 1,
     padding: 14,
@@ -1059,7 +882,6 @@ const styles = {
     fontWeight: 'bold',
     minWidth: 120,
   },
-
   whatsappButton: {
     flex: 1,
     padding: 14,
@@ -1071,7 +893,6 @@ const styles = {
     fontWeight: 'bold',
     minWidth: 160,
   },
-
   primaryButtonFull: {
     width: '100%',
     padding: 14,
@@ -1083,7 +904,6 @@ const styles = {
     fontWeight: 'bold',
     marginBottom: 10,
   },
-
   secondaryButton: {
     flex: 1,
     padding: 14,
@@ -1095,7 +915,6 @@ const styles = {
     fontWeight: 'bold',
     minWidth: 120,
   },
-
   secondaryButtonFull: {
     width: '100%',
     padding: 14,
@@ -1106,14 +925,12 @@ const styles = {
     fontSize: 16,
     fontWeight: 'bold',
   },
-
   resumeGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
     gap: 10,
     width: '100%',
   },
-
   resumeBox: {
     background: '#fbf8ff',
     border: '1px solid #eadcf9',
@@ -1128,7 +945,6 @@ const styles = {
     wordBreak: 'break-word',
     boxSizing: 'border-box',
   },
-
   readBox: {
     background: '#fff',
     border: '1px solid #eadcf9',
@@ -1140,7 +956,6 @@ const styles = {
     overflowY: 'auto',
     textAlign: 'left',
   },
-
   readTitle: {
     marginTop: 0,
     marginBottom: 10,
@@ -1148,7 +963,6 @@ const styles = {
     fontSize: 18,
     textAlign: 'left',
   },
-
   readText: {
     margin: 0,
     color: '#333',
@@ -1157,4 +971,12 @@ const styles = {
     wordBreak: 'break-word',
     textAlign: 'left',
   },
+// Commentaire
+  fcfaNote: {
+    textAlign: 'center',
+    marginTop: 12,
+    color: '#6f5b84',
+    fontStyle: 'italic',
+  },
+
 }

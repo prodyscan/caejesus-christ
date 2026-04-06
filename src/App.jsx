@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
 import HomePage from './pages/HomePage'
-import ClassesPage from './pages/ClassesPage'
+import CentresPage from './pages/CentresPage'
 import StudentsPage from './pages/StudentsPage'
 import CouplesPage from './pages/CouplesPage'
 import SeancesPage from './pages/SeancesPage'
@@ -239,7 +239,10 @@ export default function App() {
       return (
         <AssistantLoginPage
           onLoginSuccess={(assistantData) => {
-            localStorage.setItem('assistant_session', JSON.stringify(assistantData))
+            localStorage.setItem(
+              'assistant_session',
+              JSON.stringify(assistantData)
+            )
             setAssistantSession(assistantData)
             setAuthPage('login')
             setPage('home')
@@ -304,7 +307,8 @@ export default function App() {
           />
         )
       }
-      return <ClassesPage profile={activeProfile} />
+
+      return <CentresPage profile={activeProfile} />
     }
 
     if (page === 'students') {

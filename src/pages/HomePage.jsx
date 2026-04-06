@@ -1,14 +1,13 @@
 export default function HomePage({ onNavigate, profile, onLogout }) {
   const isAdmin = profile?.role === 'admin'
-  const isAssistant = profile?.role === 'assistant'
 
   const items = [
     ...(isAdmin
       ? [
           {
             key: 'classes',
-            title: 'Classes',
-            subtitle: 'Créer, modifier et voir les classes',
+            title: 'Centres',
+            subtitle: 'Créer, modifier et voir les centres',
           },
         ]
       : []),
@@ -17,35 +16,35 @@ export default function HomePage({ onNavigate, profile, onLogout }) {
       title: 'Étudiants',
       subtitle: isAdmin
         ? 'Inscription et gestion des étudiants'
-        : 'Voir et gérer les étudiants de ma classe',
+        : 'Voir et gérer les étudiants de mon centre',
     },
     {
       key: 'couples',
       title: 'Couples',
       subtitle: isAdmin
         ? 'Lier deux étudiants comme conjoint'
-        : 'Gérer les couples de ma classe',
+        : 'Gérer les couples de mon centre',
     },
     {
       key: 'seances',
       title: 'Séances',
       subtitle: isAdmin
-        ? 'Créer les séances et choisir la classe'
-        : 'Gérer les séances de ma classe',
+        ? 'Créer les séances et choisir le centre'
+        : 'Gérer les séances de mon centre',
     },
     {
       key: 'paiements',
       title: 'Paiements',
       subtitle: isAdmin
         ? 'Gérer inscriptions et contributions'
-        : 'Gérer les paiements de ma classe',
+        : 'Gérer les paiements de mon centre',
     },
     {
       key: 'bilans',
-      title: isAdmin ? 'Bilans' : 'Ma classe',
+      title: isAdmin ? 'Bilans' : 'Mon centre',
       subtitle: isAdmin
         ? 'Voir les statistiques générales'
-        : 'Voir le bilan de ma classe',
+        : 'Voir le bilan de mon centre',
     },
   ]
 
@@ -70,7 +69,11 @@ export default function HomePage({ onNavigate, profile, onLogout }) {
         </p>
 
         {onLogout && (
-          <button type="button" style={styles.logoutButton} onClick={onLogout}>
+          <button
+            type="button"
+            style={styles.logoutButton}
+            onClick={onLogout}
+          >
             Déconnexion
           </button>
         )}

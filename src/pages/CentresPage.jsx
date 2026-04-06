@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import ClassDetailPage from './ClassDetailPage'
-
+import CentreDetailPage from './CentreDetailPage'
 const emptyClassForm = {
   nom: '',
   annee: '1',
@@ -33,7 +32,7 @@ export default function ClassesPage() {
 
     if (error) {
       console.log(error)
-      setMessage('Erreur chargement classes')
+      setMessage('Erreur chargement centres')
       return
     }
 
@@ -50,7 +49,7 @@ export default function ClassesPage() {
     setMessage('')
 
     if (!form.nom.trim()) {
-      setMessage('Le nom de la classe est obligatoire')
+      setMessage('Le nom du centre est obligatoire')
       return
     }
 
@@ -103,11 +102,11 @@ export default function ClassesPage() {
         return
       }
 
-      setMessage('Erreur enregistrement classe')
+      setMessage('Erreur enregistrement centre')
       return
     }
 
-    setMessage(editingId ? 'Classe modifiée' : 'Classe ajoutée')
+    setMessage(editingId ? 'Centre modifié' : 'Centre ajouté')
     setForm(emptyClassForm)
     setEditingId(null)
     getClasses()
@@ -134,10 +133,44 @@ export default function ClassesPage() {
     setMessage('')
   }
 
+// Commentaire
   async function deleteClass(id) {
-    const ok = window.confirm('Supprimer cette classe ?')
+    const ok = window.confirm('Supprimer ce centre ?')
     if (!ok) return
 
+    // Vérifier s'il y a des étudiants
+    const { count: studentsCount, error: studentsError } = await supabase
+      .from('students')
+      .select('*', { count: 'exact', head: true })
+      .eq('class_id', id)
+
+    if (studentsError) {
+      console.log(studentsError)
+      setMessage("Erreur vérification étudiants")
+      return
+    }
+
+    // Vérifier s'il y a des séances
+    const { count: seancesCount, error: seancesError } = await supabase
+      .from('seances')
+      .select('*', { count: 'exact', head: true })
+      .eq('class_id', id)
+
+    if (seancesError) {
+      console.log(seancesError)
+      setMessage("Erreur vérification séances")
+      return
+    }
+
+    // Bloquer si centre non vide
+    if ((studentsCount || 0) > 0 || (seancesCount || 0) > 0) {
+      setMessage(
+        "Impossible de supprimer : ce centre contient encore des étudiants ou des séances"
+      )
+      return
+    }
+
+    // Suppression
     const { error } = await supabase
       .from('classes')
       .delete()
@@ -145,14 +178,13 @@ export default function ClassesPage() {
 
     if (error) {
       console.log(error)
-      setMessage('Erreur suppression classe')
+      setMessage(error.message || 'Erreur suppression centre')
       return
     }
 
-    setMessage('Classe supprimée')
+    setMessage('Centre supprimé avec succès')
     getClasses()
   }
-
   const filteredClasses = useMemo(() => {
     const term = search.trim().toLowerCase()
 
@@ -177,7 +209,7 @@ export default function ClassesPage() {
 
   if (selectedClassId) {
     return (
-      <ClassDetailPage
+      <CentreDetailPage
         classId={selectedClassId}
         onBack={() => {
           setSelectedClassId(null)
@@ -191,14 +223,14 @@ export default function ClassesPage() {
     <div style={styles.page}>
       <div style={styles.card}>
         <h2 style={styles.title}>
-          {editingId ? 'Modifier classe' : 'Classes'}
+          {editingId ? 'Modifier centre' : 'Centres'}
         </h2>
 
         <form onSubmit={saveClass}>
           <input
             style={styles.input}
             name="nom"
-            placeholder="Nom de la classe"
+            placeholder="Nom du centre"
             value={form.nom}
             onChange={handleChange}
           />
@@ -254,12 +286,16 @@ export default function ClassesPage() {
             onChange={handleChange}
           />
 
-          <button style={styles.primaryButtonFull} type="submit" disabled={loading}>
+          <button
+            style={styles.primaryButtonFull}
+            type="submit"
+            disabled={loading}
+          >
             {loading
               ? 'Enregistrement...'
               : editingId
-              ? 'Modifier classe'
-              : 'Ajouter classe'}
+              ? 'Modifier centre'
+              : 'Ajouter centre'}
           </button>
 
           {editingId && (
@@ -281,7 +317,7 @@ export default function ClassesPage() {
 
         <input
           style={styles.input}
-          placeholder="Chercher par classe, assistant, code, mot de passe, ville, pays..."
+          placeholder="Chercher par centre, assistant, code, mot de passe, ville, pays..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -292,10 +328,10 @@ export default function ClassesPage() {
       </div>
 
       <div style={styles.card}>
-        <h3 style={styles.sectionTitle}>Liste des classes</h3>
+        <h3 style={styles.sectionTitle}>Liste des centres</h3>
 
         {filteredClasses.length === 0 ? (
-          <p>Aucune classe trouvée.</p>
+          <p>Aucun centre trouvé.</p>
         ) : (
           filteredClasses.map((classe) => (
             <div key={classe.id} style={styles.itemCard}>

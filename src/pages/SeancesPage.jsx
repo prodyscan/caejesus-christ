@@ -1,12 +1,158 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import SeanceDetailPage from './SeanceDetailPage'
+
+const SEANCES_1ERE_ANNEE = [
+  'Introduction / Préambule',
+  'Témoignage Toumodi',
+  '1A : Comment savoir parler – Les paroles de murmures',
+  '1B : CAD 1 – Envie, mauvaise pensée, songe et vision',
+
+  '2 : Les faux témoignages',
+  '3 : Les jugements sentencieux',
+  'Méditation',
+  '3-4 : Parole de colère',
+
+  'Direction',
+  '5 : CAD 2 – Idolâtrie charnelle – Adultère',
+  '6 : Suite CAD 2 (parole de sagesse)',
+  '8 : Parole de colère',
+
+  '9 : Parole d’ingérence',
+  '10 : Parole hautaine',
+  '11 : Parole hautaine suite et fin',
+  '12 : CAD 3 – inimitié, impudicité, parole de connaissance',
+
+  '13 : Parole de contestation',
+  '14 : Parole de contestation suite et fin',
+  '15 : Parole de justification',
+  '16 : Parole d’opposition',
+
+  '17 : Parole charnelles',
+  '18 : CAD 4 – Les querelles, meurtres, don de foi',
+  '19 : Parole charnelle suite 1',
+  '20 : Parole charnelle suite 2',
+
+  '21 : Parole charnelle suite 3',
+  '22 : CAD 5 – Animosités, vols, don de guérison',
+  '23 : Parole charnelle fin',
+  '24 : Parole charnelle de souillure',
+
+  '25 : Comment entretenir notre communion avec DIEU',
+  '26 : CAD 6 – Disputes, cupidités, don d’opérer les miracles',
+  '27 : Comment entretenir notre communion',
+  '28 : Comment entretenir notre communion',
+
+  '29 : La vie de consécration',
+  '30 : La vie de consécration',
+  '31 : CAD 7 – Ivrognerie, méchanceté, prophétie',
+  '32 : La vie de consécration',
+
+  '33 : La vie de consécration',
+  '34 : CAD 8 – La fraude, excès de table, don de discernement',
+  '35 : La vie de consécration',
+  '36 : La vie de consécration',
+
+  '37 : CAD 9 – diversité et interprétation, chose semblable, dérèglement',
+  '38 : L’amour divin (introduction et 1ère caractéristique)',
+  '39 : 2ème caractéristique',
+  '40 : 3ème caractéristique',
+]
+
+const SEANCES_2EME_ANNEE = [
+  'D : 4ème caractéristique : l’amour pardonne tout',
+  'HH : CAD 1 - la négligence',
+  'E : 5ème caractéristique : l’amour est patient',
+  'F : 6ème caractéristique : l’amour est plein de bonté',
+
+  'G : 7ème caractéristique : l’amour n’est point envieux',
+  'II : CAD 2 - la plaisanterie',
+  'H : 8ème caractéristique : l’amour ne s’enfle point d’orgueil',
+  'I : 9ème caractéristique : l’amour ne se vante point',
+
+  'JJ : CAD 3 - l’ignorance',
+  'K : 10ème caractéristique : l’amour ne fait rien de malhonnête',
+  'L : 11ème-12ème caractéristique : l’amour ne cherche point son intérêt et ne s’irrite point',
+  'M : 13ème caractéristique : l’amour ne soupçonne point le mal',
+
+  'N : 14ème caractéristique : l’amour ne se réjouit pas de l’injustice',
+  'OO : CAD 4 - Le mensonge',
+  'P : introduction : La Foi chrétienne',
+  'Q : la Foi chrétienne suite 1',
+
+  'R : la Foi chrétienne suite 2',
+  'S : la Foi chrétienne suite 3',
+  'TT : CAD 5 - L’amertume',
+  'T : la Foi chrétienne suite 4',
+
+  'U : la Foi chrétienne suite 5',
+  'V : la Foi chrétienne suite 6',
+  'XX : CAD 6 - La clameur',
+  'Y : la Foi chrétienne suite 7',
+
+  'Z : la Foi chrétienne fin',
+  'A1 A1 : CAD 7 - la rébellion',
+  'A1 : Le responsable spirituel',
+  'B1 : Le responsable spirituel suite et fin',
+
+  'C1 : l’envoyé spirituel',
+  'D1 : l’envoyé spirituel suite et fin',
+  'C1 C1 : CAD 8 - le Découragement',
+  'E1 : Comment prêcher, exhorter',
+
+  'F1 : Comment prêcher, exhorter suite 1',
+  'G1 : Comment prêcher, exhorter fin',
+  'H1 : Ministère pastoral',
+  'F1 F1 : CAD 9/10 - la calomnie et folle',
+]
+
+const SEANCES_3EME_ANNEE = [
+  'CC : Ministère pastoral suite 1',
+  'DD : Ministère pastoral suite 2',
+  'EE : Ministère pastoral suite 3',
+  'Étude livre : Les précis de la délivrance',
+
+  'KK : Ministère pastoral suite 4',
+  'LL : Ministère pastoral suite 5',
+  'MM : Ministère pastoral fin',
+  'Étude livre : colère',
+
+  'PP : l’œuvre du Saint-Esprit',
+  'UU : l’œuvre du Saint-Esprit suite 1',
+  'VV : l’œuvre du Saint-Esprit suite 2',
+  'Étude livre : orgueil',
+
+  'YY : l’œuvre du Saint-Esprit suite 3',
+  'B1B1 : l’œuvre du Saint-Esprit suite 4',
+  'D1D1 : l’œuvre du Saint-Esprit suite fin',
+  'Étude livre : la maladie',
+
+  'E1E1 : Les portes d’entrées',
+  'G1G1 : les portes d’entrées fin',
+  'H1H1 : la démonologie',
+  'Étude livre : alcool',
+
+  'I1I1 : Devenir un gagneur d’âme',
+  'J1J1 : spécialisation dans l’œuvre missionnaire',
+  'K1K1 : les esprits de pauvreté et d’avarice',
+
+  'Étude livre : Lecteur',
+  'Études thématiques : les penchants de cœur',
+  'N1 : Étude livre : La connaissance de JESUS le DIEU Véritable',
+  'N2 : Étude livre : La connaissance de JESUS le DIEU Véritable',
+]
 
 const emptyForm = {
   class_id: '',
   chapitre: '',
   date_seance: '',
-  numero_seance: '',
+}
+
+function getSeancesByYear(annee) {
+  if (Number(annee) === 1) return SEANCES_1ERE_ANNEE
+  if (Number(annee) === 2) return SEANCES_2EME_ANNEE
+  if (Number(annee) === 3) return SEANCES_3EME_ANNEE
+  return []
 }
 
 export default function SeancesPage({ profile }) {
@@ -16,15 +162,51 @@ export default function SeancesPage({ profile }) {
   const [editingId, setEditingId] = useState(null)
   const [selectedSeanceId, setSelectedSeanceId] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [searchSeance, setSearchSeance] = useState('')
   const [message, setMessage] = useState('')
+  const [selectedSeances, setSelectedSeances] = useState([])
+  const [seanceSearch, setSeanceSearch] = useState('')
 
   const isAdmin = profile?.role === 'admin'
-  const assistantClassId = profile?.role === 'assistant' ? profile?.class_id : null
+  const assistantClassId =
+    profile?.role === 'assistant' ? profile?.class_id : null
 
   useEffect(() => {
     getClasses()
     getSeances()
   }, [profile])
+
+  const finalClassId = isAdmin ? form.class_id : assistantClassId
+
+  const selectedClass = useMemo(() => {
+    return classes.find((c) => String(c.id) === String(finalClassId)) || null
+  }, [classes, finalClassId])
+
+// Commentaire
+  const filteredSeances = useMemo(() => {
+    const query = searchSeance.trim().toLowerCase()
+
+    if (!query) return seances
+
+    return seances.filter((s) => {
+      const seanceText = (s.chapitre || '').toLowerCase()
+      const centre = (s.classes?.nom || '').toLowerCase()
+
+      return seanceText.includes(query) || centre.includes(query)
+    })
+  }, [seances, searchSeance])
+
+  const availableSeances = useMemo(() => {
+    return getSeancesByYear(selectedClass?.annee)
+  }, [selectedClass])
+
+  const filteredAvailableSeances = useMemo(() => {
+    const query = seanceSearch.trim().toLowerCase()
+    if (!query) return availableSeances
+    return availableSeances.filter((item) =>
+      item.toLowerCase().includes(query)
+    )
+  }, [availableSeances, seanceSearch])
 
   async function getClasses() {
     let query = supabase
@@ -40,7 +222,7 @@ export default function SeancesPage({ profile }) {
 
     if (error) {
       console.log(error)
-      setMessage('Erreur chargement classes')
+      setMessage('Erreur chargement centres')
       return
     }
 
@@ -77,58 +259,68 @@ export default function SeancesPage({ profile }) {
 
   function handleChange(e) {
     const { name, value } = e.target
+
+    if (name === 'class_id') {
+      setSelectedSeances([])
+      setSeanceSearch('')
+      setForm((prev) => ({
+        ...prev,
+        class_id: value,
+        chapitre: '',
+      }))
+      return
+    }
+
     setForm((prev) => ({
       ...prev,
       [name]: value,
     }))
   }
 
-  async function getNextSeanceNumber(classId) {
-    const { data, error } = await supabase
-      .from('seances')
-      .select('numero_seance')
-      .eq('class_id', classId)
-      .order('numero_seance', { ascending: false })
-      .limit(1)
+  function toggleSeance(seance) {
+    setSelectedSeances((prev) => {
+      const exists = prev.includes(seance)
+      const next = exists
+        ? prev.filter((item) => item !== seance)
+        : [...prev, seance]
 
-    if (error) {
-      console.log(error)
-      return 1
-    }
+      if (!exists && next.length > 4) {
+        setMessage('Tu peux choisir au maximum 4 séances par jour')
+        return prev
+      }
 
-    const lastNumber = data?.[0]?.numero_seance || 0
-    return lastNumber + 1
+      setMessage('')
+      setForm((current) => ({
+        ...current,
+        chapitre: next.join('\n'),
+      }))
+
+      return next
+    })
   }
 
   async function saveSeance(e) {
     e.preventDefault()
     setMessage('')
 
-    const finalClassId = isAdmin ? form.class_id : assistantClassId
-
     if (!finalClassId) {
-      setMessage('Choisis une classe')
+      setMessage('Choisis un centre')
       return
     }
 
-    if (!form.chapitre.trim()) {
-      setMessage('Le chapitre est obligatoire')
+    const seanceFinale = form.chapitre.trim()
+
+    if (!seanceFinale) {
+      setMessage('Coche la séance du jour dans la liste ci-dessus')
       return
     }
 
     setLoading(true)
 
-    let numeroFinal = form.numero_seance ? Number(form.numero_seance) : null
-
-    if (!numeroFinal) {
-      numeroFinal = await getNextSeanceNumber(finalClassId)
-    }
-
     const payload = {
       class_id: finalClassId,
-      chapitre: form.chapitre.trim(),
+      chapitre: seanceFinale,
       date_seance: form.date_seance || new Date().toISOString().slice(0, 10),
-      numero_seance: numeroFinal,
     }
 
     let error = null
@@ -141,18 +333,6 @@ export default function SeancesPage({ profile }) {
 
       error = result.error
     } else {
-      const existingSameNumber = seances.find(
-        (s) =>
-          s.class_id === finalClassId &&
-          Number(s.numero_seance) === Number(numeroFinal)
-      )
-
-      if (existingSameNumber) {
-        setLoading(false)
-        setMessage('Ce numéro de séance existe déjà pour cette classe')
-        return
-      }
-
       const result = await supabase
         .from('seances')
         .insert([payload])
@@ -171,23 +351,36 @@ export default function SeancesPage({ profile }) {
     setMessage(editingId ? 'Séance modifiée' : 'Séance ajoutée')
     setForm(emptyForm)
     setEditingId(null)
+    setSelectedSeances([])
+    setSeanceSearch('')
     getSeances()
   }
 
   function editSeance(seance) {
     setEditingId(seance.id)
+
+    const rawSeance = seance.chapitre || ''
+    const splitSeances = rawSeance
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
     setForm({
       class_id: seance.class_id || '',
-      chapitre: seance.chapitre || '',
+      chapitre: rawSeance,
       date_seance: seance.date_seance || '',
-      numero_seance: seance.numero_seance ? String(seance.numero_seance) : '',
     })
+
+    setSelectedSeances(splitSeances)
+    setSeanceSearch('')
     setMessage('')
   }
 
   function cancelEdit() {
     setEditingId(null)
     setForm(emptyForm)
+    setSelectedSeances([])
+    setSeanceSearch('')
     setMessage('')
   }
 
@@ -243,25 +436,57 @@ export default function SeancesPage({ profile }) {
               value={form.class_id}
               onChange={handleChange}
             >
-              <option value="">Choisir une classe</option>
+              <option value="">Choisir un centre</option>
               {classes.map((classe) => (
                 <option key={classe.id} value={classe.id}>
-                  {classe.nom} - {classe.annee}ère année
+                  {classe.nom} - {classe.annee}e année
                 </option>
               ))}
             </select>
           ) : (
             <div style={styles.infoBox}>
-              Classe : {classes[0]?.nom || '-'}
+              Centre : {classes[0]?.nom || '-'}
             </div>
           )}
 
-          <input
-            style={styles.input}
+          {selectedClass && availableSeances.length > 0 ? (
+            <div style={styles.chapterBox}>
+              <p style={styles.chapterTitle}>
+                Séances de {selectedClass.annee}e année
+              </p>
+
+              <input
+                style={styles.input}
+                placeholder="Rechercher une séance..."
+                value={seanceSearch}
+                onChange={(e) => setSeanceSearch(e.target.value)}
+              />
+
+              <p style={styles.helperText}>
+                Tu peux choisir jusqu’à 4 séances par jour.
+              </p>
+
+              <div style={styles.chapterList}>
+                {filteredAvailableSeances.map((seance) => (
+                  <label key={seance} style={styles.checkboxRow}>
+                    <input
+                      type="checkbox"
+                      checked={selectedSeances.includes(seance)}
+                      onChange={() => toggleSeance(seance)}
+                    />
+                    <span style={styles.checkboxText}>{seance}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <textarea
+            style={styles.textarea}
             name="chapitre"
-            placeholder="Chapitre"
+            placeholder="Coche la séance du jour dans la liste ci-dessus"
             value={form.chapitre}
-            onChange={handleChange}
+            readOnly
           />
 
           <input
@@ -272,16 +497,11 @@ export default function SeancesPage({ profile }) {
             onChange={handleChange}
           />
 
-          <input
-            style={styles.input}
-            name="numero_seance"
-            type="number"
-            placeholder="Numéro de séance (laisser vide pour auto)"
-            value={form.numero_seance}
-            onChange={handleChange}
-          />
-
-          <button style={styles.primaryButtonFull} type="submit" disabled={loading}>
+          <button
+            style={styles.primaryButtonFull}
+            type="submit"
+            disabled={loading}
+          >
             {loading
               ? 'Enregistrement...'
               : editingId
@@ -305,18 +525,24 @@ export default function SeancesPage({ profile }) {
 
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Liste des séances</h3>
+// Commentaire
+        <input
+          style={styles.input}
+          placeholder="Rechercher une séance ou un centre..."
+          value={searchSeance}
+          onChange={(e) => setSearchSeance(e.target.value)}
+        />
 
         {seances.length === 0 ? (
           <p>Aucune séance enregistrée.</p>
         ) : (
-          seances.map((seance) => (
+          filteredSeances.map((seance) => (
             <div key={seance.id} style={styles.itemCard}>
               <strong style={styles.seanceName}>{seance.chapitre}</strong>
 
-              <p style={styles.meta}>Classe : {seance.classes?.nom || '-'}</p>
+              <p style={styles.meta}>Centre : {seance.classes?.nom || '-'}</p>
               <p style={styles.meta}>Année : {seance.classes?.annee || '-'}</p>
               <p style={styles.meta}>Date : {seance.date_seance || '-'}</p>
-              <p style={styles.meta}>Numéro : {seance.numero_seance || '-'}</p>
 
               <div style={styles.row}>
                 <button
@@ -393,6 +619,19 @@ const styles = {
     boxSizing: 'border-box',
     background: '#fff',
   },
+  textarea: {
+    width: '100%',
+    minHeight: 120,
+    padding: 14,
+    marginBottom: 12,
+    borderRadius: 12,
+    border: '2px solid #d8c8ef',
+    fontSize: 16,
+    boxSizing: 'border-box',
+    background: '#fff',
+    resize: 'vertical',
+    whiteSpace: 'pre-wrap',
+  },
   infoBox: {
     width: '100%',
     padding: 14,
@@ -404,6 +643,48 @@ const styles = {
     fontWeight: 'bold',
     boxSizing: 'border-box',
   },
+  chapterBox: {
+    marginBottom: 12,
+    borderRadius: 14,
+    border: '2px solid #eadcf9',
+    background: '#fbf8ff',
+    padding: 14,
+  },
+  chapterTitle: {
+    marginTop: 0,
+    marginBottom: 12,
+    color: '#2b0a78',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontSize: 18,
+  },
+  helperText: {
+    marginTop: 0,
+    marginBottom: 12,
+    color: '#6f5b84',
+    textAlign: 'center',
+    fontSize: 14,
+  },
+  chapterList: {
+    maxHeight: 320,
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  checkboxRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
+    background: '#fff',
+    border: '1px solid #eadcf9',
+  },
+  checkboxText: {
+    color: '#333',
+    lineHeight: 1.4,
+  },
   itemCard: {
     border: '1px solid #eadcf9',
     borderRadius: 14,
@@ -414,10 +695,12 @@ const styles = {
   seanceName: {
     color: '#2b0a78',
     fontSize: 20,
+    whiteSpace: 'pre-wrap',
   },
   meta: {
     margin: '6px 0',
     color: '#666',
+    whiteSpace: 'pre-wrap',
   },
   row: {
     display: 'flex',

@@ -15,10 +15,12 @@ export default function BilansPage({ profile }) {
   const [filterPays, setFilterPays] = useState('all')
   const [filterVille, setFilterVille] = useState('all')
   const [filterType, setFilterType] = useState('all')
+  const [searchStudentBilan, setSearchStudentBilan] = useState('')
   const [message, setMessage] = useState('')
 
   const isAdmin = profile?.role === 'admin'
-  const assistantClassId = profile?.role === 'assistant' ? profile?.class_id : null
+  const assistantClassId =
+    profile?.role === 'assistant' ? profile?.class_id : null
 
   useEffect(() => {
     loadBilans()
@@ -133,59 +135,36 @@ export default function BilansPage({ profile }) {
     return paiements.filter((p) => filteredStudentIds.includes(p.student_id))
   }, [paiements, filteredStudentIds])
 
-  function getTotalStudents() {
-    return filteredStudents.length
+  function countCoursesInSeance(chapitreText) {
+    if (!chapitreText) return 0
+
+    return String(chapitreText)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean).length
   }
 
-  function getTotalClasses() {
-    return filteredClassIds.length
+  function isCouple(studentId) {
+    const student = filteredStudents.find((s) => s.id === studentId)
+    return !!student?.couple_record_id
   }
 
-  function getTotalSeances() {
-    return filteredSeances.length
-  }
+  function getCoupleSize(studentId) {
+    const student = filteredStudents.find((s) => s.id === studentId)
 
-  function getTotalPresents() {
-    return filteredPresences.filter((p) => p.statut === 'present').length
-  }
+    if (!student?.couple_record_id) return 1
 
-  function getTotalAbsents() {
-    return filteredPresences.filter((p) => p.statut === 'absent').length
-  }
+    const partners = filteredStudents.filter(
+      (s) => s.couple_record_id === student.couple_record_id
+    )
 
-  function getTotalInscriptions() {
-    return filteredPaiements
-      .filter((p) => p.type_paiement === 'inscription')
-      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
-  }
-
-  function getTotalContributions() {
-    return filteredPaiements
-      .filter((p) => p.type_paiement === 'contribution')
-      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
-  }
-
-  function getTotalGeneral() {
-    return getTotalInscriptions() + getTotalContributions()
-  }
-
-  function getStudentPresentCount(studentId) {
-    return filteredPresences.filter(
-      (p) => p.student_id === studentId && p.statut === 'present'
-    ).length
-  }
-
-  function getStudentAbsentCount(studentId) {
-    return filteredPresences.filter(
-      (p) => p.student_id === studentId && p.statut === 'absent'
-    ).length
+    return partners.length > 0 ? partners.length : 1
   }
 
   function getLinkedStudentIds(studentId) {
     const student = filteredStudents.find((s) => s.id === studentId)
 
     if (!student) return [studentId]
-
     if (!student.couple_record_id) return [studentId]
 
     return filteredStudents
@@ -193,7 +172,7 @@ export default function BilansPage({ profile }) {
       .map((s) => s.id)
   }
 
-  function getStudentContributionPaid(studentId) {
+  function getStudentContributionPaidTotal(studentId) {
     const linkedIds = getLinkedStudentIds(studentId)
 
     return filteredPaiements
@@ -205,7 +184,7 @@ export default function BilansPage({ profile }) {
       .reduce((sum, p) => sum + Number(p.montant || 0), 0)
   }
 
-  function getStudentInscriptionPaid(studentId) {
+  function getStudentInscriptionPaidTotal(studentId) {
     const linkedIds = getLinkedStudentIds(studentId)
 
     return filteredPaiements
@@ -217,10 +196,73 @@ export default function BilansPage({ profile }) {
       .reduce((sum, p) => sum + Number(p.montant || 0), 0)
   }
 
+  function getStudentContributionPaid(studentId) {
+    const total = getStudentContributionPaidTotal(studentId)
+    return total / getCoupleSize(studentId)
+  }
+
+  function getStudentInscriptionPaid(studentId) {
+    const total = getStudentInscriptionPaidTotal(studentId)
+    return total / getCoupleSize(studentId)
+  }
+
+  function getStudentInscriptionExpected(studentId) {
+    return isCouple(studentId) ? INSCRIPTION_MONTANT / 2 : INSCRIPTION_MONTANT
+  }
+
+  function getMaxContribution(studentId) {
+    const student = filteredStudents.find((s) => s.id === studentId)
+    if (!student) return 0
+
+    const classe = classes.find((c) => c.id === student.class_id)
+    if (!classe) return 0
+
+    const MAX_BY_YEAR = {
+      1: 5000 * 11,
+      2: 5000 * 9,
+      3: 5000 * 7,
+    }
+
+    let max = MAX_BY_YEAR[Number(classe.annee)] || 0
+
+    if (isCouple(studentId)) {
+      max = max / 2
+    }
+
+    return max
+  }
+
+  function getMaxPresenceByYear(studentId) {
+    const student = filteredStudents.find((s) => s.id === studentId)
+    if (!student) return 0
+
+    const classe = classes.find((c) => c.id === student.class_id)
+    if (!classe) return 0
+
+    const MAX_BY_YEAR = {
+      1: 11 * 4,
+      2: 9 * 4,
+      3: 7 * 4,
+    }
+
+    return MAX_BY_YEAR[Number(classe.annee)] || 0
+  }
+
+  function getStudentPresentCount(studentId) {
+    return filteredPresences
+      .filter((p) => p.student_id === studentId && p.statut === 'present')
+      .reduce((sum, presence) => {
+        const seance = filteredSeances.find((s) => s.id === presence.seance_id)
+        return sum + countCoursesInSeance(seance?.chapitre)
+      }, 0)
+  }
+
   function getStudentContributionExpected(studentId) {
     const totalPresents = getStudentPresentCount(studentId)
     const blocs = Math.floor(totalPresents / SEANCES_PAR_BLOC)
-    return blocs * CONTRIBUTION_PAR_BLOC
+    const total = blocs * CONTRIBUTION_PAR_BLOC
+
+    return isCouple(studentId) ? total / 2 : total
   }
 
   function getStudentContributionRemaining(studentId) {
@@ -237,51 +279,101 @@ export default function BilansPage({ profile }) {
 
   function getStudentInscriptionRemaining(studentId) {
     const paid = getStudentInscriptionPaid(studentId)
-    return INSCRIPTION_MONTANT > paid ? INSCRIPTION_MONTANT - paid : 0
+    const expected = getStudentInscriptionExpected(studentId)
+    return expected > paid ? expected - paid : 0
+  }
+
+  function getStudentAbsentCount(studentId) {
+    return filteredPresences.filter(
+      (p) => p.student_id === studentId && p.statut === 'absent'
+    ).length
   }
 
   function getStudentAttendanceRate(studentId) {
     const student = filteredStudents.find((s) => s.id === studentId)
     if (!student) return 0
 
-    const totalClassSeances = filteredSeances.filter(
-      (s) => s.class_id === student.class_id
-    ).length
+    const totalClassCourses = filteredSeances
+      .filter((s) => s.class_id === student.class_id)
+      .reduce((sum, seance) => sum + countCoursesInSeance(seance.chapitre), 0)
 
-    if (totalClassSeances === 0) return 0
+    if (totalClassCourses === 0) return 0
 
     const presents = getStudentPresentCount(studentId)
-    return Math.round((presents / totalClassSeances) * 100)
+    return Math.round((presents / totalClassCourses) * 100)
   }
 
   function hasInscription(student) {
-    return getStudentInscriptionPaid(student.id) >= INSCRIPTION_MONTANT
+    return (
+      getStudentInscriptionPaid(student.id) >=
+      getStudentInscriptionExpected(student.id)
+    )
   }
 
   function hasContribution(student) {
-    return getStudentContributionPaid(student.id) > 0
+    return getStudentContributionPaid(student.id) >= getMaxContribution(student.id)
   }
 
   function hasPresence(student) {
-    return getStudentPresentCount(student.id) > 0
+    return getStudentPresentCount(student.id) >= getMaxPresenceByYear(student.id)
   }
 
   function isFullyUpToDate(student) {
-    return hasInscription(student) && hasContribution(student) && hasPresence(student)
+    return (
+      hasInscription(student) &&
+      hasContribution(student) &&
+      hasPresence(student)
+    )
   }
 
   function getStudentFinanceStatus(studentId) {
     const inscriptionPaid = getStudentInscriptionPaid(studentId)
     const contributionPaid = getStudentContributionPaid(studentId)
-    const inscriptionExpected = INSCRIPTION_MONTANT
-    const contributionExpected = getStudentContributionExpected(studentId)
+    const inscriptionExpected = getStudentInscriptionExpected(studentId)
+    const contributionMax = getMaxContribution(studentId)
 
-    const totalPaid = inscriptionPaid + contributionPaid
-    const totalExpected = inscriptionExpected + contributionExpected
+    const inscriptionSolded = inscriptionPaid >= inscriptionExpected
+    const contributionSolded = contributionPaid >= contributionMax
 
-    if (totalPaid > totalExpected) return 'En avance'
-    if (totalPaid === totalExpected) return 'À jour'
+    if (inscriptionSolded && contributionSolded) return 'Soldé'
+    if (inscriptionPaid > 0 || contributionPaid > 0) return 'Partiel'
     return 'En retard'
+  }
+
+  function getTotalStudents() {
+    return filteredStudents.length
+  }
+
+  function getTotalCentres() {
+    return filteredClassIds.length
+  }
+
+  function getTotalHommes() {
+    return filteredStudents.filter(
+      (student) => (student.sexe || '').toLowerCase() === 'homme'
+    ).length
+  }
+
+  function getTotalFemmes() {
+    return filteredStudents.filter(
+      (student) => (student.sexe || '').toLowerCase() === 'femme'
+    ).length
+  }
+
+  function getTotalInscriptions() {
+    return filteredPaiements
+      .filter((p) => p.type_paiement === 'inscription')
+      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
+  }
+
+  function getTotalContributions() {
+    return filteredPaiements
+      .filter((p) => p.type_paiement === 'contribution')
+      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
+  }
+
+  function getTotalGeneral() {
+    return getTotalInscriptions() + getTotalContributions()
   }
 
   const displayedStudents = useMemo(() => {
@@ -306,19 +398,33 @@ export default function BilansPage({ profile }) {
     return filteredStudents
   }, [filteredStudents, filterType, filteredPaiements, filteredPresences, filteredSeances])
 
+  const displayedStudentsFiltered = useMemo(() => {
+    const query = searchStudentBilan.trim().toLowerCase()
+
+    if (!query) return displayedStudents
+
+    return displayedStudents.filter((student) => {
+      const fullName = `${student.nom || ''} ${student.prenom || ''}`.toLowerCase()
+      const classeNom =
+        (classes.find((c) => c.id === student.class_id)?.nom || '').toLowerCase()
+
+      return fullName.includes(query) || classeNom.includes(query)
+    })
+  }, [displayedStudents, searchStudentBilan, classes])
+
   function getTitleByFilter() {
-    if (filterType === 'inscription') return 'Étudiants inscrits'
-    if (filterType === 'contribution') return 'Étudiants avec contribution'
-    if (filterType === 'presence') return 'Étudiants présents'
-    if (filterType === 'complete') return 'Étudiants à jour complet'
+    if (filterType === 'inscription') return 'Étudiants soldés en inscription'
+    if (filterType === 'contribution') return 'Étudiants soldés en contribution'
+    if (filterType === 'presence') return 'Étudiants présents sur tout le parcours'
+    if (filterType === 'complete') return 'Étudiants totalement soldés et présents'
     return 'Tous les étudiants'
   }
 
-  function getAssistantClassLabel() {
+  function getAssistantCentreLabel() {
     if (isAdmin) return null
-    const assistantClass = classes.find((c) => c.id === assistantClassId)
-    if (!assistantClass) return 'Ma classe'
-    return `${assistantClass.nom} - ${assistantClass.annee}ère année`
+    const assistantCentre = classes.find((c) => c.id === assistantClassId)
+    if (!assistantCentre) return 'Mon centre'
+    return `${assistantCentre.nom} - ${assistantCentre.annee}ère année`
   }
 
   return (
@@ -373,7 +479,7 @@ export default function BilansPage({ profile }) {
           </>
         ) : (
           <div style={styles.infoBox}>
-            Classe : {getAssistantClassLabel()}
+            Centre : {getAssistantCentreLabel()}
           </div>
         )}
 
@@ -395,7 +501,7 @@ export default function BilansPage({ profile }) {
 
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>
-          {isAdmin ? 'Résumé général' : 'Résumé de ma classe'}
+          {isAdmin ? 'Résumé général' : 'Résumé de mon centre'}
         </h3>
 
         <div style={styles.grid}>
@@ -405,23 +511,18 @@ export default function BilansPage({ profile }) {
           </div>
 
           <div style={styles.box}>
-            <strong>{getTotalClasses()}</strong>
-            <span>Classes</span>
+            <strong>{getTotalCentres()}</strong>
+            <span>Centres</span>
           </div>
 
           <div style={styles.box}>
-            <strong>{getTotalSeances()}</strong>
-            <span>Séances</span>
+            <strong>{getTotalHommes()}</strong>
+            <span>Hommes</span>
           </div>
 
           <div style={styles.box}>
-            <strong>{getTotalPresents()}</strong>
-            <span>Présents</span>
-          </div>
-
-          <div style={styles.box}>
-            <strong>{getTotalAbsents()}</strong>
-            <span>Absents</span>
+            <strong>{getTotalFemmes()}</strong>
+            <span>Femmes</span>
           </div>
         </div>
       </div>
@@ -452,17 +553,36 @@ export default function BilansPage({ profile }) {
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>{getTitleByFilter()}</h3>
 
-        {displayedStudents.length === 0 ? (
+        <input
+          style={styles.select}
+          placeholder="Rechercher un étudiant ou un centre..."
+          value={searchStudentBilan}
+          onChange={(e) => setSearchStudentBilan(e.target.value)}
+        />
+
+        {displayedStudentsFiltered.length === 0 ? (
           <p>Aucun étudiant trouvé.</p>
         ) : (
-          displayedStudents.map((student) => (
+          displayedStudentsFiltered.map((student) => (
             <div key={student.id} style={styles.studentCard}>
               <strong style={styles.studentName}>
                 {student.nom} {student.prenom}
               </strong>
 
               <p style={styles.meta}>
-                Présences : {getStudentPresentCount(student.id)} / {filteredSeances.length}
+                Centre : {classes.find((c) => c.id === student.class_id)?.nom || '-'}
+              </p>
+
+              <p style={styles.meta}>
+                Année : {classes.find((c) => c.id === student.class_id)?.annee || '-'}
+              </p>
+
+              <p style={styles.meta}>
+                Présences : {getStudentPresentCount(student.id)}
+              </p>
+
+              <p style={styles.meta}>
+                Présence attendue : {getMaxPresenceByYear(student.id)}
               </p>
 
               <p style={styles.meta}>
@@ -474,23 +594,7 @@ export default function BilansPage({ profile }) {
               </p>
 
               <p style={styles.meta}>
-                Contributions : {getStudentContributionPaid(student.id)} FCFA
-              </p>
-
-              <p style={styles.meta}>
-                Contribution attendue : {getStudentContributionExpected(student.id)} FCFA
-              </p>
-
-              <p style={styles.meta}>
-                Reste contribution : {getStudentContributionRemaining(student.id)} FCFA
-              </p>
-
-              <p style={styles.meta}>
-                Avance contribution : {getStudentContributionAdvance(student.id)} FCFA
-              </p>
-
-              <p style={styles.meta}>
-                Inscription : {hasInscription(student) ? 'Payée' : 'Non payée'}
+                Inscription attendue : {getStudentInscriptionExpected(student.id)} FCFA
               </p>
 
               <p style={styles.meta}>
@@ -502,7 +606,23 @@ export default function BilansPage({ profile }) {
               </p>
 
               <p style={styles.meta}>
-                Cours ratés : {getStudentAbsentCount(student.id) > 0 ? 'Oui' : 'Non'}
+                Contribution attendue actuelle : {getStudentContributionExpected(student.id)} FCFA
+              </p>
+
+              <p style={styles.meta}>
+                Contribution à solder : {getMaxContribution(student.id)} FCFA
+              </p>
+
+              <p style={styles.meta}>
+                Contribution payée : {getStudentContributionPaid(student.id)} FCFA
+              </p>
+
+              <p style={styles.meta}>
+                Reste contribution actuelle : {getStudentContributionRemaining(student.id)} FCFA
+              </p>
+
+              <p style={styles.meta}>
+                Avance contribution actuelle : {getStudentContributionAdvance(student.id)} FCFA
               </p>
 
               <p style={styles.meta}>
@@ -510,7 +630,7 @@ export default function BilansPage({ profile }) {
               </p>
 
               <p style={styles.meta}>
-                Statut complet : {isFullyUpToDate(student) ? 'À jour' : 'Pas à jour'}
+                Statut complet : {isFullyUpToDate(student) ? 'Complet' : 'Pas complet'}
               </p>
             </div>
           ))

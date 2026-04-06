@@ -4,12 +4,20 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
 
   const items = [
     { key: 'home', label: 'Accueil' },
-    ...(isAdmin ? [{ key: 'classes', label: 'Classes' }] : []),
+
+    ...(isAdmin
+      ? [{ key: 'classes', label: 'Centres' }]
+      : []),
+
     { key: 'students', label: 'Étudiants' },
     { key: 'couples', label: 'Couples' },
     { key: 'seances', label: 'Séances' },
     { key: 'paiements', label: 'Paiements' },
-    { key: 'bilans', label: isAdmin ? 'Bilans' : 'Ma classe' },
+
+    {
+      key: 'bilans',
+      label: isAdmin ? 'Bilans' : 'Mon centre',
+    },
   ]
 
   return (
@@ -19,7 +27,8 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
           <p style={styles.roleText}>Mode administrateur</p>
         ) : isAssistant ? (
           <p style={styles.roleText}>
-            Assistant : {profile?.nom || '-'} {profile?.class_nom ? `• ${profile.class_nom}` : ''}
+            Assistant : {profile?.nom || '-'}{' '}
+            {profile?.class_nom ? `• ${profile.class_nom}` : ''}
           </p>
         ) : null}
       </div>
@@ -40,7 +49,11 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
         ))}
       </div>
 
-      <button type="button" onClick={onLogout} style={styles.logoutButton}>
+      <button
+        type="button"
+        onClick={onLogout}
+        style={styles.logoutButton}
+      >
         Déconnexion
       </button>
     </div>
