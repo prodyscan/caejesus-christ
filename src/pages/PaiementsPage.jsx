@@ -127,6 +127,20 @@ export default function PaiementsPage({ profile }) {
     setSeances(data || [])
   }
 
+  function parseLocalDate(dateString) {
+    if (!dateString) return null
+
+    const parts = String(dateString).split('-')
+    if (parts.length !== 3) return null
+
+    const year = Number(parts[0])
+    const month = Number(parts[1]) - 1
+    const day = Number(parts[2])
+
+    return new Date(year, month, day)
+  }
+
+
   async function getPaiements() {
     let query = supabase
       .from('paiements')
@@ -615,8 +629,15 @@ export default function PaiementsPage({ profile }) {
     const now = new Date()
 
     return filteredPaiements.filter((p) => {
-      if (!p.date_paiement) return false
-      const date = new Date(p.date_paiement)
+      const date = parseLocalDate(p.date_paiement)
+      if (!date) return false
+
+      if (periode === 'mensuel') {
+        return (
+          date.getMonth() === now.getMonth() &&
+          date.getFullYear() === now.getFullYear()
+        )
+      }
 
       if (periode === 'trimestre') {
         const currentQuarter = Math.floor(now.getMonth() / 3)
@@ -624,25 +645,6 @@ export default function PaiementsPage({ profile }) {
 
         return (
           paymentQuarter === currentQuarter &&
-          date.getFullYear() === now.getFullYear()
-        )
-      }
-
-      if (periode === 'personnalise') {
-        if (!dateDebut || !dateFin) return true
-
-        const start = new Date(dateDebut)
-        const end = new Date(dateFin)
-
-        start.setHours(0, 0, 0, 0)
-        end.setHours(23, 59, 59, 999)
-
-        return date >= start && date <= end
-      }
-
-      if (periode === 'mensuel') {
-        return (
-          date.getMonth() === now.getMonth() &&
           date.getFullYear() === now.getFullYear()
         )
       }
@@ -661,8 +663,18 @@ export default function PaiementsPage({ profile }) {
         return date.getFullYear() === now.getFullYear()
       }
 
-      if (periode === 'tout') {
-        return true
+      if (periode === 'personnalise') {
+        if (!dateDebut || !dateFin) return true
+
+        const start = parseLocalDate(dateDebut)
+        const end = parseLocalDate(dateFin)
+
+        if (!start || !end) return true
+
+        start.setHours(0, 0, 0, 0)
+        end.setHours(23, 59, 59, 999)
+
+        return date >= start && date <= end
       }
 
       return true

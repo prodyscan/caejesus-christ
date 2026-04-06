@@ -13,6 +13,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   const [temoignage, setTemoignage] = useState('')
   const [loadingRapport, setLoadingRapport] = useState(false)
   const [editingRapport, setEditingRapport] = useState(true)
+  const [closingLoading, setClosingLoading] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -121,7 +122,16 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     )
   }
 
+  function isSeanceCloturee() {
+    return !!seance?.cloturee
+  }
+
   async function markPresence(studentId, statut) {
+    if (isSeanceCloturee()) {
+      setMessage('La séance est clôturée')
+      return
+    }
+
     setMessage('')
 
     const { error } = await supabase
@@ -148,6 +158,11 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   async function markByMatricule(e) {
     e.preventDefault()
 
+    if (isSeanceCloturee()) {
+      setMessage('La séance est clôturée')
+      return
+    }
+
     const code = matriculeInput.trim()
 
     if (!code) {
@@ -165,6 +180,112 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
     await markPresence(student.id, 'present')
     setMatriculeInput('')
     setMessage(`Présence validée : ${student.nom} ${student.prenom}`)
+  }
+
+  function handleQrResult(code) {
+    if (isSeanceCloturee()) {
+      setMessage('La séance est clôturée')
+      return
+    }
+
+    const cleanCode = String(code || '').trim()
+
+    if (!cleanCode) {
+      setMessage('Entre ou scanne un code')
+      return
+    }
+
+    const student = findStudentByMatricule(cleanCode)
+
+    if (!student) {
+      setMessage('Aucun étudiant trouvé avec ce QR code')
+      return
+    }
+
+    markPresence(student.id, 'present')
+    setMatriculeInput('')
+    setMessage(`Présence validée : ${student.nom} ${student.prenom}`)
+  }
+
+  async function cloturerSeance() {
+    if (!seance) return
+
+    const ok = window.confirm(
+      "Clôturer cette séance ? Tous les étudiants non pointés seront marqués absents."
+    )
+    if (!ok) return
+
+    setClosingLoading(true)
+    setMessage('')
+
+    const nonPointes = students.filter((student) => !presences[student.id])
+
+    if (nonPointes.length > 0) {
+      const payloadAbsents = nonPointes.map((student) => ({
+        seance_id: seanceId,
+        student_id: student.id,
+        statut: 'absent',
+      }))
+
+      const { error: absentsError } = await supabase
+        .from('presences')
+        .upsert(payloadAbsents, { onConflict: 'seance_id,student_id' })
+
+      if (absentsError) {
+        console.log(absentsError)
+        setClosingLoading(false)
+        setMessage('Erreur clôture séance')
+        return
+      }
+    }
+
+    const { error } = await supabase
+      .from('seances')
+      .update({
+        cloturee: true,
+        date_cloture: new Date().toISOString(),
+      })
+      .eq('id', seanceId)
+
+    setClosingLoading(false)
+
+    if (error) {
+      console.log(error)
+      setMessage('Erreur clôture séance')
+      return
+    }
+
+    setMessage('Séance clôturée')
+    loadData()
+  }
+
+  async function reouvrirSeance() {
+    if (!seance) return
+
+    const ok = window.confirm('Réouvrir cette séance ?')
+    if (!ok) return
+
+    setClosingLoading(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('seances')
+      .update({
+        cloturee: false,
+        date_cloture: null,
+      })
+      .eq('id', seanceId)
+
+    setClosingLoading(false)
+
+    if (error) {
+      console.log(error)
+      setMessage('Erreur réouverture séance')
+      return
+    }
+
+    setMessage('Séance réouverte')
+    loadData()
   }
 
   async function saveRapport() {
@@ -242,12 +363,21 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   }
 
   function getContributionsOfDay() {
-    return paiements.filter((p) => p.type_paiement === 'contribution')
+    return paiements.filter(
+      (p) =>
+        p.type_paiement === 'contribution' ||
+        p.type_paiement === 'contribution_arrieree'
+    )
   }
 
   function getInscriptionsOfDay() {
-    return paiements.filter((p) => p.type_paiement === 'inscription')
+    return paiements.filter(
+      (p) =>
+        p.type_paiement === 'inscription' ||
+        p.type_paiement === 'inscription_arrieree'
+    )
   }
+
   function getNombreHommes() {
     return students.filter((s) => s.sexe === 'homme').length
   }
@@ -267,6 +397,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
       (s) => s.sexe === 'femme' && presences[s.id] === 'present'
     ).length
   }
+
   function getStudentFullName(studentId) {
     const student = students.find((s) => s.id === studentId)
     if (!student) return 'Étudiant inconnu'
@@ -309,6 +440,7 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
   function getTotalGeneral() {
     return getTotalInscription() + getTotalContribution()
   }
+
   function buildShareContent() {
     const presents = getPresentStudents().length
     const totalStudents = students.length
@@ -436,6 +568,30 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           <p><strong>Centre :</strong> {seance.classes?.nom || '-'}</p>
           <p><strong>Année :</strong> {seance.classes?.annee || '-'}</p>
           <p><strong>Date :</strong> {seance.date_seance || '-'}</p>
+          <p><strong>Statut :</strong> {seance.cloturee ? 'Clôturée' : 'Ouverte'}</p>
+          <p><strong>Date clôture :</strong> {seance.date_cloture || '-'}</p>
+        </div>
+
+        <div style={styles.actionRow}>
+          {!seance.cloturee ? (
+            <button
+              type="button"
+              style={styles.absentButton}
+              onClick={cloturerSeance}
+              disabled={closingLoading}
+            >
+              {closingLoading ? 'Clôture...' : 'Clôturer la séance'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              style={styles.primaryButton}
+              onClick={reouvrirSeance}
+              disabled={closingLoading}
+            >
+              {closingLoading ? 'Réouverture...' : 'Réouvrir la séance'}
+            </button>
+          )}
         </div>
 
         {message ? <p style={styles.message}>{message}</p> : null}
@@ -451,6 +607,14 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
             style={pointageMode === 'matricule' ? styles.modeButtonActive : styles.modeButton}
           >
             Matricule
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPointageMode('qr')}
+            style={pointageMode === 'qr' ? styles.modeButtonActive : styles.modeButton}
+          >
+            QR Code
           </button>
 
           <button
@@ -478,6 +642,27 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
                 Valider présence
               </button>
             </form>
+          </div>
+        )}
+
+        {pointageMode === 'qr' && (
+          <div style={styles.innerCard}>
+            <h3 style={styles.sectionTitle}>Pointage par QR Code</h3>
+
+            <input
+              style={styles.input}
+              placeholder="Scanner ou coller le code QR / matricule"
+              value={matriculeInput}
+              onChange={(e) => setMatriculeInput(e.target.value)}
+            />
+
+            <button
+              type="button"
+              style={styles.primaryButtonFull}
+              onClick={() => handleQrResult(matriculeInput.trim())}
+            >
+              Valider QR
+            </button>
           </div>
         )}
 
@@ -563,7 +748,6 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
         </div>
       </div>
 
-
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Résumé présence</h3>
 
@@ -589,28 +773,29 @@ export default function SeanceDetailPage({ seanceId, onBack }) {
           </div>
         </div>
       </div>
-  <div style={styles.card}>
-    <h3 style={styles.sectionTitle}>Résumé financier de la séance</h3>
 
-    <div style={styles.resumeGrid}>
-      <div style={styles.resumeBox}>
-        <strong>{getTotalInscription()}</strong>
-        <span>Inscriptions</span>
+      <div style={styles.card}>
+        <h3 style={styles.sectionTitle}>Résumé financier de la séance</h3>
+
+        <div style={styles.resumeGrid}>
+          <div style={styles.resumeBox}>
+            <strong>{getTotalInscription()}</strong>
+            <span>Inscriptions</span>
+          </div>
+
+          <div style={styles.resumeBox}>
+            <strong>{getTotalContribution()}</strong>
+            <span>Contributions</span>
+          </div>
+
+          <div style={styles.resumeBox}>
+            <strong>{getTotalGeneral()}</strong>
+            <span>Total général</span>
+          </div>
+        </div>
+
+        <p style={styles.fcfaNote}>Montants en FCFA</p>
       </div>
-
-      <div style={styles.resumeBox}>
-        <strong>{getTotalContribution()}</strong>
-        <span>Contributions</span>
-      </div>
-
-      <div style={styles.resumeBox}>
-        <strong>{getTotalGeneral()}</strong>
-        <span>Total général</span>
-      </div>
-    </div>
-
-    <p style={styles.fcfaNote}>Montants en FCFA</p>
-  </div>
 
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Témoignages</h3>
@@ -971,12 +1156,10 @@ const styles = {
     wordBreak: 'break-word',
     textAlign: 'left',
   },
-// Commentaire
   fcfaNote: {
     textAlign: 'center',
     marginTop: 12,
     color: '#6f5b84',
     fontStyle: 'italic',
   },
-
 }

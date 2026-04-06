@@ -7,52 +7,42 @@ const SEANCES_1ERE_ANNEE = [
   'Témoignage Toumodi',
   '1A : Comment savoir parler – Les paroles de murmures',
   '1B : CAD 1 – Envie, mauvaise pensée, songe et vision',
-
   '2 : Les faux témoignages',
   '3 : Les jugements sentencieux',
   'Méditation',
   '3-4 : Parole de colère',
-
   'Direction',
   '5 : CAD 2 – Idolâtrie charnelle – Adultère',
   '6 : Suite CAD 2 (parole de sagesse)',
   '8 : Parole de colère',
-
   '9 : Parole d’ingérence',
   '10 : Parole hautaine',
   '11 : Parole hautaine suite et fin',
   '12 : CAD 3 – inimitié, impudicité, parole de connaissance',
-
   '13 : Parole de contestation',
   '14 : Parole de contestation suite et fin',
   '15 : Parole de justification',
   '16 : Parole d’opposition',
-
   '17 : Parole charnelles',
   '18 : CAD 4 – Les querelles, meurtres, don de foi',
   '19 : Parole charnelle suite 1',
   '20 : Parole charnelle suite 2',
-
   '21 : Parole charnelle suite 3',
   '22 : CAD 5 – Animosités, vols, don de guérison',
   '23 : Parole charnelle fin',
   '24 : Parole charnelle de souillure',
-
   '25 : Comment entretenir notre communion avec DIEU',
   '26 : CAD 6 – Disputes, cupidités, don d’opérer les miracles',
   '27 : Comment entretenir notre communion',
   '28 : Comment entretenir notre communion',
-
   '29 : La vie de consécration',
   '30 : La vie de consécration',
   '31 : CAD 7 – Ivrognerie, méchanceté, prophétie',
   '32 : La vie de consécration',
-
   '33 : La vie de consécration',
   '34 : CAD 8 – La fraude, excès de table, don de discernement',
   '35 : La vie de consécration',
   '36 : La vie de consécration',
-
   '37 : CAD 9 – diversité et interprétation, chose semblable, dérèglement',
   '38 : L’amour divin (introduction et 1ère caractéristique)',
   '39 : 2ème caractéristique',
@@ -64,42 +54,34 @@ const SEANCES_2EME_ANNEE = [
   'HH : CAD 1 - la négligence',
   'E : 5ème caractéristique : l’amour est patient',
   'F : 6ème caractéristique : l’amour est plein de bonté',
-
   'G : 7ème caractéristique : l’amour n’est point envieux',
   'II : CAD 2 - la plaisanterie',
   'H : 8ème caractéristique : l’amour ne s’enfle point d’orgueil',
   'I : 9ème caractéristique : l’amour ne se vante point',
-
   'JJ : CAD 3 - l’ignorance',
   'K : 10ème caractéristique : l’amour ne fait rien de malhonnête',
   'L : 11ème-12ème caractéristique : l’amour ne cherche point son intérêt et ne s’irrite point',
   'M : 13ème caractéristique : l’amour ne soupçonne point le mal',
-
   'N : 14ème caractéristique : l’amour ne se réjouit pas de l’injustice',
   'OO : CAD 4 - Le mensonge',
   'P : introduction : La Foi chrétienne',
   'Q : la Foi chrétienne suite 1',
-
   'R : la Foi chrétienne suite 2',
   'S : la Foi chrétienne suite 3',
   'TT : CAD 5 - L’amertume',
   'T : la Foi chrétienne suite 4',
-
   'U : la Foi chrétienne suite 5',
   'V : la Foi chrétienne suite 6',
   'XX : CAD 6 - La clameur',
   'Y : la Foi chrétienne suite 7',
-
   'Z : la Foi chrétienne fin',
   'A1 A1 : CAD 7 - la rébellion',
   'A1 : Le responsable spirituel',
   'B1 : Le responsable spirituel suite et fin',
-
   'C1 : l’envoyé spirituel',
   'D1 : l’envoyé spirituel suite et fin',
   'C1 C1 : CAD 8 - le Découragement',
   'E1 : Comment prêcher, exhorter',
-
   'F1 : Comment prêcher, exhorter suite 1',
   'G1 : Comment prêcher, exhorter fin',
   'H1 : Ministère pastoral',
@@ -111,31 +93,25 @@ const SEANCES_3EME_ANNEE = [
   'DD : Ministère pastoral suite 2',
   'EE : Ministère pastoral suite 3',
   'Étude livre : Les précis de la délivrance',
-
   'KK : Ministère pastoral suite 4',
   'LL : Ministère pastoral suite 5',
   'MM : Ministère pastoral fin',
   'Étude livre : colère',
-
   'PP : l’œuvre du Saint-Esprit',
   'UU : l’œuvre du Saint-Esprit suite 1',
   'VV : l’œuvre du Saint-Esprit suite 2',
   'Étude livre : orgueil',
-
   'YY : l’œuvre du Saint-Esprit suite 3',
   'B1B1 : l’œuvre du Saint-Esprit suite 4',
   'D1D1 : l’œuvre du Saint-Esprit suite fin',
   'Étude livre : la maladie',
-
   'E1E1 : Les portes d’entrées',
   'G1G1 : les portes d’entrées fin',
   'H1H1 : la démonologie',
   'Étude livre : alcool',
-
   'I1I1 : Devenir un gagneur d’âme',
   'J1J1 : spécialisation dans l’œuvre missionnaire',
   'K1K1 : les esprits de pauvreté et d’avarice',
-
   'Étude livre : Lecteur',
   'Études thématiques : les penchants de cœur',
   'N1 : Étude livre : La connaissance de JESUS le DIEU Véritable',
@@ -182,7 +158,6 @@ export default function SeancesPage({ profile }) {
     return classes.find((c) => String(c.id) === String(finalClassId)) || null
   }, [classes, finalClassId])
 
-// Commentaire
   const filteredSeances = useMemo(() => {
     const query = searchSeance.trim().toLowerCase()
 
@@ -203,6 +178,7 @@ export default function SeancesPage({ profile }) {
   const filteredAvailableSeances = useMemo(() => {
     const query = seanceSearch.trim().toLowerCase()
     if (!query) return availableSeances
+
     return availableSeances.filter((item) =>
       item.toLowerCase().includes(query)
     )
@@ -525,7 +501,7 @@ export default function SeancesPage({ profile }) {
 
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Liste des séances</h3>
-// Commentaire
+
         <input
           style={styles.input}
           placeholder="Rechercher une séance ou un centre..."
@@ -544,13 +520,22 @@ export default function SeancesPage({ profile }) {
               <p style={styles.meta}>Année : {seance.classes?.annee || '-'}</p>
               <p style={styles.meta}>Date : {seance.date_seance || '-'}</p>
 
+              <div
+                style={{
+                  ...styles.statusBadge,
+                  ...(seance.cloturee ? styles.statusClosed : styles.statusOpen),
+                }}
+              >
+                {seance.cloturee ? 'Clôturée' : 'Ouverte'}
+              </div>
+
               <div style={styles.row}>
                 <button
                   type="button"
                   style={styles.openButton}
                   onClick={() => openSeance(seance.id)}
                 >
-                  Ouvrir séance
+                  {seance.cloturee ? 'Voir séance clôturée' : 'Ouvrir séance'}
                 </button>
 
                 <button
@@ -765,5 +750,25 @@ const styles = {
     color: '#d4148e',
     textAlign: 'center',
     fontSize: 18,
+  },
+  statusBadge: {
+    display: 'inline-block',
+    marginTop: 10,
+    marginBottom: 6,
+    padding: '8px 14px',
+    borderRadius: 999,
+    fontWeight: 'bold',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  statusOpen: {
+    background: '#e8f5e9',
+    color: '#1b8f3a',
+    border: '1px solid #b7dfbf',
+  },
+  statusClosed: {
+    background: '#fff4e5',
+    color: '#b26a00',
+    border: '1px solid #f3d19c',
   },
 }
