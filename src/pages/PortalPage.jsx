@@ -28,7 +28,7 @@ export default function PortalPage({ onEnter }) {
                 Président mondial des Écoles et Universités de la Connaissance de
                 JÉSUS-CHRIST, le Dieu Véritable.
                 <br />
-                <em>(Jean 5:20)</em>
+                <em>(1 Jean 5:20)</em>
               </p>
 
 
