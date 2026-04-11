@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 export default function CouplesPage({ profile }) {
   const [students, setStudents] = useState([])
   const [couples, setCouples] = useState([])
+  const [searchHomme, setSearchHomme] = useState('')
+  const [searchFemme, setSearchFemme] = useState('')
   const [form, setForm] = useState({
     student1_id: '',
     student2_id: '',
@@ -11,7 +13,8 @@ export default function CouplesPage({ profile }) {
   const [message, setMessage] = useState('')
 
   const isAdmin = profile?.role === 'admin'
-  const assistantClassId = profile?.role === 'assistant' ? profile?.class_id : null
+  const assistantClassId =
+    profile?.role === 'assistant' ? profile?.class_id : null
 
   useEffect(() => {
     getStudents()
@@ -79,10 +82,40 @@ export default function CouplesPage({ profile }) {
   }
 
   function getStudentName(id) {
-    const student = students.find((s) => s.id === id)
+    const student = students.find((s) => String(s.id) === String(id))
     if (!student) return '-'
     return `${student.nom || ''} ${student.prenom || ''}`.trim()
   }
+
+  const hommesDisponibles = useMemo(() => {
+    const query = searchHomme.trim().toLowerCase()
+
+    return students
+      .filter((s) => s.sexe === 'homme' && !s.couple_record_id)
+      .filter((student) => {
+        if (!query) return true
+
+        const fullName =
+          `${student.nom || ''} ${student.prenom || ''}`.toLowerCase()
+
+        return fullName.includes(query)
+      })
+  }, [students, searchHomme])
+
+  const femmesDisponibles = useMemo(() => {
+    const query = searchFemme.trim().toLowerCase()
+
+    return students
+      .filter((s) => s.sexe === 'femme' && !s.couple_record_id)
+      .filter((student) => {
+        if (!query) return true
+
+        const fullName =
+          `${student.nom || ''} ${student.prenom || ''}`.toLowerCase()
+
+        return fullName.includes(query)
+      })
+  }, [students, searchFemme])
 
   async function createCouple(e) {
     e.preventDefault()
@@ -98,8 +131,8 @@ export default function CouplesPage({ profile }) {
       return
     }
 
-    const homme = students.find((s) => s.id === form.student1_id)
-    const femme = students.find((s) => s.id === form.student2_id)
+    const homme = students.find((s) => String(s.id) === String(form.student1_id))
+    const femme = students.find((s) => String(s.id) === String(form.student2_id))
 
     if (!homme || !femme) {
       setMessage('Étudiants introuvables')
@@ -107,7 +140,10 @@ export default function CouplesPage({ profile }) {
     }
 
     if (!isAdmin) {
-      if (homme.class_id !== assistantClassId || femme.class_id !== assistantClassId) {
+      if (
+        String(homme.class_id) !== String(assistantClassId) ||
+        String(femme.class_id) !== String(assistantClassId)
+      ) {
         setMessage('Tu ne peux gérer que les couples de ta classe')
         return
       }
@@ -160,6 +196,8 @@ export default function CouplesPage({ profile }) {
       student1_id: '',
       student2_id: '',
     })
+    setSearchHomme('')
+    setSearchFemme('')
 
     setMessage('Couple créé avec succès')
     getStudents()
@@ -206,6 +244,13 @@ export default function CouplesPage({ profile }) {
         <h2 style={styles.title}>Couples</h2>
 
         <form onSubmit={createCouple}>
+          <input
+            style={styles.input}
+            placeholder="Rechercher l’homme..."
+            value={searchHomme}
+            onChange={(e) => setSearchHomme(e.target.value)}
+          />
+
           <select
             style={styles.input}
             name="student1_id"
@@ -213,14 +258,19 @@ export default function CouplesPage({ profile }) {
             onChange={handleChange}
           >
             <option value="">Choisir l’homme</option>
-            {students
-              .filter((s) => s.sexe === 'homme' && !s.couple_record_id)
-              .map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.nom} {student.prenom}
-                </option>
-              ))}
+            {hommesDisponibles.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.nom} {student.prenom}
+              </option>
+            ))}
           </select>
+
+          <input
+            style={styles.input}
+            placeholder="Rechercher la femme..."
+            value={searchFemme}
+            onChange={(e) => setSearchFemme(e.target.value)}
+          />
 
           <select
             style={styles.input}
@@ -229,13 +279,11 @@ export default function CouplesPage({ profile }) {
             onChange={handleChange}
           >
             <option value="">Choisir la femme</option>
-            {students
-              .filter((s) => s.sexe === 'femme' && !s.couple_record_id)
-              .map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.nom} {student.prenom}
-                </option>
-              ))}
+            {femmesDisponibles.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.nom} {student.prenom}
+              </option>
+            ))}
           </select>
 
           <button style={styles.addButton} type="submit">
@@ -255,7 +303,8 @@ export default function CouplesPage({ profile }) {
           couples.map((couple) => (
             <div key={couple.id} style={styles.coupleCard}>
               <strong>
-                {getStudentName(couple.student1_id)} + {getStudentName(couple.student2_id)}
+                {getStudentName(couple.student1_id)} +{' '}
+                {getStudentName(couple.student2_id)}
               </strong>
 
               <div style={styles.row}>
@@ -284,6 +333,7 @@ const styles = {
     background: '#f7f1fb',
     minHeight: '100vh',
   },
+
   card: {
     background: '#fff',
     border: '2px solid #e3d8f5',
@@ -292,6 +342,7 @@ const styles = {
     marginBottom: 20,
     boxShadow: '0 8px 18px rgba(43, 10, 120, 0.08)',
   },
+
   title: {
     marginTop: 0,
     marginBottom: 16,
@@ -300,6 +351,7 @@ const styles = {
     fontSize: 32,
     fontWeight: 'bold',
   },
+
   sectionTitle: {
     marginTop: 0,
     marginBottom: 16,
@@ -307,6 +359,7 @@ const styles = {
     textAlign: 'center',
     fontSize: 24,
   },
+
   input: {
     width: '100%',
     padding: 14,
@@ -317,6 +370,7 @@ const styles = {
     background: '#fff',
     boxSizing: 'border-box',
   },
+
   addButton: {
     width: '100%',
     padding: 14,
@@ -327,6 +381,7 @@ const styles = {
     fontSize: 16,
     fontWeight: 'bold',
   },
+
   coupleCard: {
     border: '1px solid #e3e3e3',
     borderRadius: 14,
@@ -334,12 +389,14 @@ const styles = {
     marginBottom: 12,
     background: '#fafafa',
   },
+
   row: {
     display: 'flex',
     gap: 10,
     marginTop: 12,
     flexWrap: 'wrap',
   },
+
   deleteButton: {
     padding: '10px 14px',
     borderRadius: 10,
@@ -347,6 +404,7 @@ const styles = {
     background: '#c62828',
     color: '#fff',
   },
+
   message: {
     marginTop: 12,
     fontWeight: 'bold',

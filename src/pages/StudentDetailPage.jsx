@@ -3,7 +3,9 @@ import { QRCodeSVG } from 'qrcode.react'
 import { supabase } from '../supabaseClient'
 
 const INSCRIPTION_MONTANT = 10000
+const INSCRIPTION_MONTANT_COUPLE = 5000
 const CONTRIBUTION_PAR_BLOC = 5000
+const CONTRIBUTION_PAR_BLOC_COUPLE = 2500
 const SEANCES_PAR_BLOC = 4
 
 export default function StudentDetailPage({ studentId, onBack, profile }) {
@@ -84,10 +86,11 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
     setPaiements(paiementsData || [])
 
     if (studentData.est_transfere && studentData.ancien_class_id) {
-      const { data: anciennesSeancesData, error: anciennesSeancesError } = await supabase
-        .from('seances')
-        .select('id, chapitre')
-        .eq('class_id', studentData.ancien_class_id)
+      const { data: anciennesSeancesData, error: anciennesSeancesError } =
+        await supabase
+          .from('seances')
+          .select('id, chapitre')
+          .eq('class_id', studentData.ancien_class_id)
 
       if (anciennesSeancesError) {
         console.log(anciennesSeancesError)
@@ -125,34 +128,68 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
       .filter(Boolean).length
   }
 
-  function isSeanceBeforeStudentEntry(seance) {
-    if (!student || !seance || !student.date_ajout_etudiant || !seance.date_seance) {
-      return false
+  function toDateOnly(value) {
+    if (!value) return null
+
+    const text = String(value).slice(0, 10)
+    const parts = text.split('-')
+
+    if (parts.length !== 3) return null
+
+    const year = Number(parts[0])
+    const month = Number(parts[1])
+    const day = Number(parts[2])
+
+    if (!year || !month || !day) return null
+
+    return new Date(year, month - 1, day, 0, 0, 0, 0)
+  }
+
+  function getStudentEntryDate() {
+    if (!student) return null
+
+    if (student.date_ajout_etudiant) {
+      return toDateOnly(student.date_ajout_etudiant)
     }
 
-    const seanceDate = new Date(seance.date_seance)
-    const ajoutDate = new Date(student.date_ajout_etudiant)
+    if (student.created_at) {
+      return toDateOnly(student.created_at)
+    }
 
-    seanceDate.setHours(0, 0, 0, 0)
-    ajoutDate.setHours(0, 0, 0, 0)
+    return null
+  }
 
-    return seanceDate < ajoutDate
+  function isSeanceBeforeStudentEntry(seance) {
+    const seanceDate = toDateOnly(seance?.date_seance)
+    const entryDate = getStudentEntryDate()
+
+    if (!seanceDate || !entryDate) return false
+
+    return seanceDate.getTime() < entryDate.getTime()
+  }
+
+  function getInscriptionExpected() {
+    if (student?.est_en_couple) return INSCRIPTION_MONTANT_COUPLE
+    return INSCRIPTION_MONTANT
+  }
+
+  function getContributionParBloc() {
+    if (student?.est_en_couple) return CONTRIBUTION_PAR_BLOC_COUPLE
+    return CONTRIBUTION_PAR_BLOC
   }
 
   const coursRates = useMemo(() => {
     const lignes = []
 
     seances.forEach((seance) => {
-      const statut = presences[seance.id]
-      const estRate = statut === 'absent' || (!statut && isSeanceBeforeStudentEntry(seance))
-
-      if (!estRate) return
-
-      const dejaRattrape = rattrapages.some(
+      const estAvantEntree = isSeanceBeforeStudentEntry(seance)
+      const estAbsent = presences[seance.id] === 'absent'
+      const estRattrape = rattrapages.some(
         (r) => String(r.seance_id) === String(seance.id)
       )
 
-      if (dejaRattrape) return
+      if (estRattrape) return
+      if (!estAvantEntree && !estAbsent) return
 
       const chapitres = String(seance.chapitre || '')
         .split('\n')
@@ -161,14 +198,18 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
 
       if (chapitres.length === 0) {
         lignes.push({
-          seanceId: `${seance.id}-0`,
+          seanceId: estAvantEntree
+            ? `before-entry-${seance.id}`
+            : String(seance.id),
           date: seance.date_seance || '-',
           chapitre: '-',
         })
       } else {
         chapitres.forEach((chapitre, index) => {
           lignes.push({
-            seanceId: `${seance.id}-${index}`,
+            seanceId: estAvantEntree
+              ? `before-entry-${seance.id}-${index}`
+              : `${seance.id}-${index}`,
             date: seance.date_seance || '-',
             chapitre,
           })
@@ -177,7 +218,7 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
     })
 
     return lignes
-  }, [presences, seances, rattrapages, student])
+  }, [seances, presences, rattrapages, student])
 
   function getCourseCardStyle(seanceId, seance) {
     const estRattrape = rattrapages.some(
@@ -238,6 +279,7 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
 
   async function confirmCertificat() {
     if (!student) return
+
     if (!certificatDate) {
       setMessage('Choisis la date de réception du certificat')
       return
@@ -290,23 +332,29 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
   }
 
   function getCoursFaits() {
-    return seances.reduce((sum, seance) => {
+    const coursPresents = seances.reduce((sum, seance) => {
       if (presences[seance.id] === 'present') {
         return sum + countCoursesInSeance(seance.chapitre)
       }
       return sum
     }, 0)
+
+    const coursRattrapes = rattrapages.length
+
+    return coursPresents + coursRattrapes
   }
 
   function getCoursRates() {
     return seances.reduce((sum, seance) => {
-      const statut = presences[seance.id]
+      const estAbsent = presences[seance.id] === 'absent'
+      const estAvantEntree = isSeanceBeforeStudentEntry(seance)
+      const estRattrape = rattrapages.some(
+        (r) => String(r.seance_id) === String(seance.id)
+      )
 
-      if (statut === 'absent') {
-        return sum + countCoursesInSeance(seance.chapitre)
-      }
+      if (estRattrape) return sum
 
-      if (!statut && isSeanceBeforeStudentEntry(seance)) {
+      if (estAbsent || estAvantEntree) {
         return sum + countCoursesInSeance(seance.chapitre)
       }
 
@@ -316,18 +364,25 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
 
   function getCoursNonPointes() {
     return seances.reduce((sum, seance) => {
+      const estAvantEntree = isSeanceBeforeStudentEntry(seance)
       const statut = presences[seance.id]
+      const estRattrape = rattrapages.some(
+        (r) => String(r.seance_id) === String(seance.id)
+      )
 
-      if (!statut && !isSeanceBeforeStudentEntry(seance)) {
-        return sum + countCoursesInSeance(seance.chapitre)
-      }
+      if (estAvantEntree) return sum
+      if (estRattrape) return sum
+      if (statut === 'present') return sum
+      if (statut === 'absent') return sum
 
-      return sum
+      return sum + countCoursesInSeance(seance.chapitre)
     }, 0)
   }
 
   function getAncienValideTransfert() {
-    const valeurEnregistree = Number(student?.seances_validees_avant_transfert || 0)
+    const valeurEnregistree = Number(
+      student?.seances_validees_avant_transfert || 0
+    )
 
     if (valeurEnregistree > 0) return valeurEnregistree
     return Number(ancienCoursValidesCalcules || 0)
@@ -344,7 +399,10 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
     return {
       ancienValide,
       nouveauFait,
-      seancesReconues: Math.min(ancienValide + rattrapagesValides, nouveauFait),
+      seancesReconues: Math.min(
+        ancienValide + rattrapagesValides,
+        nouveauFait
+      ),
       surplusIgnore: Math.max(ancienValide - nouveauFait, 0),
       rattrapagesValides,
       rattrapage: rattrapageRestant,
@@ -405,7 +463,11 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
   function getSeancesRatees() {
     return seances.filter((s) => {
       const statut = presences[s.id]
+      const estRattrape = rattrapages.some(
+        (r) => String(r.seance_id) === String(s.id)
+      )
 
+      if (estRattrape) return false
       if (statut === 'absent') return true
       if (!statut && isSeanceBeforeStudentEntry(s)) return true
 
@@ -435,7 +497,7 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
 
   function getContributionExpected() {
     const blocs = Math.floor(getCoursFaits() / SEANCES_PAR_BLOC)
-    return blocs * CONTRIBUTION_PAR_BLOC
+    return blocs * getContributionParBloc()
   }
 
   function isContributionOk() {
@@ -584,6 +646,13 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
           </div>
 
           <div style={styles.detailRow}>
+            <span style={styles.detailLabel}>Couple</span>
+            <span style={styles.detailValue}>
+              {student.est_en_couple ? 'Oui' : 'Non'}
+            </span>
+          </div>
+
+          <div style={styles.detailRow}>
             <span style={styles.detailLabel}>Téléphone</span>
             <span style={styles.detailValue}>{student.telephone || '-'}</span>
           </div>
@@ -638,10 +707,27 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
           </div>
 
           <div style={styles.detailRow}>
+            <span style={styles.detailLabel}>Inscription attendue</span>
+            <span style={styles.detailValue}>{getInscriptionExpected()} FCFA</span>
+          </div>
+
+          <div style={styles.detailRow}>
+            <span style={styles.detailLabel}>Inscription payée</span>
+            <span style={styles.detailValue}>{getInscriptionPaid()} FCFA</span>
+          </div>
+
+          <div style={styles.detailRow}>
             <span style={styles.detailLabel}>Inscription</span>
             <span style={styles.detailValue}>
-              {getInscriptionPaid() >= INSCRIPTION_MONTANT ? 'Payée' : 'Non payée'}
+              {getInscriptionPaid() >= getInscriptionExpected()
+                ? 'Payée'
+                : 'Non payée'}
             </span>
+          </div>
+
+          <div style={styles.detailRow}>
+            <span style={styles.detailLabel}>Contribution par bloc</span>
+            <span style={styles.detailValue}>{getContributionParBloc()} FCFA</span>
           </div>
 
           <div style={styles.detailRow}>
@@ -765,14 +851,18 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
           </div>
 
           <div style={{ ...styles.summaryBox, borderColor: '#cdeed8' }}>
-            <strong style={{ color: '#2e7d32' }}>{resumePresenceAffiche.coursReconus}</strong>
+            <strong style={{ color: '#2e7d32' }}>
+              {resumePresenceAffiche.coursReconus}
+            </strong>
             <span style={{ color: '#2e7d32' }}>
               {student.est_transfere ? 'Cours reconnus' : 'Cours faits'}
             </span>
           </div>
 
           <div style={{ ...styles.summaryBox, borderColor: '#f3c4c4' }}>
-            <strong style={{ color: '#d91e18' }}>{resumePresenceAffiche.coursRates}</strong>
+            <strong style={{ color: '#d91e18' }}>
+              {resumePresenceAffiche.coursRates}
+            </strong>
             <span style={{ color: '#d91e18' }}>Cours ratés</span>
           </div>
 
@@ -898,11 +988,15 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
           <p style={styles.emptyText}>Aucune séance pour ce centre.</p>
         ) : (
           seances.map((s) => {
-            const statut = presences[s.id]
-            const estRateParAjout = !statut && isSeanceBeforeStudentEntry(s)
             const estRattrape = rattrapages.some(
               (r) => String(r.seance_id) === String(s.id)
             )
+
+            const statut = estRattrape
+              ? 'rattrape'
+              : isSeanceBeforeStudentEntry(s)
+              ? 'absent'
+              : presences[s.id] || 'non_pointe'
 
             return (
               <div key={s.id} style={getCourseCardStyle(s.id, s)}>
@@ -911,20 +1005,20 @@ export default function StudentDetailPage({ studentId, onBack, profile }) {
 
                 <div
                   style={
-                    estRattrape
+                    statut === 'rattrape'
                       ? styles.coursRattrape
                       : statut === 'present'
                       ? styles.coursSuivi
-                      : statut === 'absent' || estRateParAjout
+                      : statut === 'absent'
                       ? styles.coursRate
                       : styles.statusNeutral
                   }
                 >
-                  {estRattrape
+                  {statut === 'rattrape'
                     ? 'Rattrapé'
                     : statut === 'present'
                     ? 'Présent'
-                    : statut === 'absent' || estRateParAjout
+                    : statut === 'absent'
                     ? 'Absent'
                     : 'Non pointé'}
                 </div>

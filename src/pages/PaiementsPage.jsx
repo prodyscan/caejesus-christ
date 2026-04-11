@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 const INSCRIPTION_MONTANT = 10000
+const INSCRIPTION_MONTANT_COUPLE = 5000
 const CONTRIBUTION_PAR_BLOC = 5000
+const CONTRIBUTION_PAR_BLOC_COUPLE = 2500
 const SEANCES_PAR_BLOC = 4
 
 const emptyForm = {
@@ -17,9 +19,11 @@ const emptyForm = {
 export default function PaiementsPage({ profile }) {
   const [classes, setClasses] = useState([])
   const [students, setStudents] = useState([])
+  const [couples, setCouples] = useState([])
   const [paiements, setPaiements] = useState([])
   const [presences, setPresences] = useState([])
   const [seances, setSeances] = useState([])
+  const [rattrapages, setRattrapages] = useState([])
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -41,9 +45,11 @@ export default function PaiementsPage({ profile }) {
   useEffect(() => {
     getClasses()
     getStudents()
+    getCouples()
     getPaiements()
     getPresences()
     getSeances()
+    getRattrapages()
   }, [profile])
 
   useEffect(() => {
@@ -96,8 +102,34 @@ export default function PaiementsPage({ profile }) {
     setStudents(data || [])
   }
 
+  async function getCouples() {
+    const { data, error } = await supabase
+      .from('couples')
+      .select('*')
+
+    if (error) {
+      console.log(error)
+      setMessage('Erreur chargement couples')
+      return
+    }
+
+    setCouples(data || [])
+  }
+
   async function getPresences() {
-    const { data, error } = await supabase.from('presences').select('*')
+    let query = supabase.from('presences').select('*')
+
+    if (!isAdmin && assistantClassId) {
+      const studentIds = students
+        .filter((s) => String(s.class_id) === String(assistantClassId))
+        .map((s) => s.id)
+
+      if (studentIds.length > 0) {
+        query = query.in('student_id', studentIds)
+      }
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.log(error)
@@ -126,6 +158,30 @@ export default function PaiementsPage({ profile }) {
     setSeances(data || [])
   }
 
+  async function getRattrapages() {
+    let query = supabase.from('rattrapages').select('*')
+
+    if (!isAdmin && assistantClassId) {
+      const studentIds = students
+        .filter((s) => String(s.class_id) === String(assistantClassId))
+        .map((s) => s.id)
+
+      if (studentIds.length > 0) {
+        query = query.in('student_id', studentIds)
+      }
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.log(error)
+      setMessage('Erreur chargement rattrapages')
+      return
+    }
+
+    setRattrapages(data || [])
+  }
+
   function parseLocalDate(dateString) {
     if (!dateString) return null
 
@@ -149,9 +205,9 @@ export default function PaiementsPage({ profile }) {
           nom,
           prenom,
           matricule,
-          couple_record_id,
           sexe,
-          class_id
+          class_id,
+          couple_record_id
         )
       `)
       .order('created_at', { ascending: false })
@@ -188,41 +244,31 @@ export default function PaiementsPage({ profile }) {
       .filter(Boolean).length
   }
 
-  function getLinkedStudentIds(studentId) {
-    const student = students.find((s) => s.id === studentId)
-
-    if (!student) return [studentId]
-    if (!student.couple_record_id) return [studentId]
-
-    return students
-      .filter((s) => s.couple_record_id === student.couple_record_id)
-      .map((s) => s.id)
-  }
-
   function isCouple(studentId) {
-    const student = students.find((s) => s.id === studentId)
-    return !!student?.couple_record_id
+    return couples.some(
+      (couple) =>
+        String(couple.student1_id) === String(studentId) ||
+        String(couple.student2_id) === String(studentId)
+    )
   }
 
-  function getCoupleSize(studentId) {
-    const student = students.find((s) => s.id === studentId)
+  function getInscriptionExpectedAmount(studentId) {
+    return isCouple(studentId)
+      ? INSCRIPTION_MONTANT_COUPLE
+      : INSCRIPTION_MONTANT
+  }
 
-    if (!student?.couple_record_id) return 1
-
-    const partners = students.filter(
-      (s) => s.couple_record_id === student.couple_record_id
-    )
-
-    return partners.length > 0 ? partners.length : 1
+  function getContributionParBlocAmount(studentId) {
+    return isCouple(studentId)
+      ? CONTRIBUTION_PAR_BLOC_COUPLE
+      : CONTRIBUTION_PAR_BLOC
   }
 
   function getStudentContributionPaidTotal(studentId) {
-    const linkedIds = getLinkedStudentIds(studentId)
-
     return paiements
       .filter(
         (p) =>
-          linkedIds.includes(p.student_id) &&
+          String(p.student_id) === String(studentId) &&
           (
             p.type_paiement === 'contribution' ||
             p.type_paiement === 'contribution_arrieree'
@@ -232,12 +278,10 @@ export default function PaiementsPage({ profile }) {
   }
 
   function getStudentInscriptionPaidTotal(studentId) {
-    const linkedIds = getLinkedStudentIds(studentId)
-
     return paiements
       .filter(
         (p) =>
-          linkedIds.includes(p.student_id) &&
+          String(p.student_id) === String(studentId) &&
           (
             p.type_paiement === 'inscription' ||
             p.type_paiement === 'inscription_arrieree'
@@ -247,60 +291,69 @@ export default function PaiementsPage({ profile }) {
   }
 
   function getClassOfStudent(studentId) {
-    const student = students.find((s) => s.id === studentId)
+    const student = students.find((s) => String(s.id) === String(studentId))
     if (!student) return null
 
-    return classes.find((c) => c.id === student.class_id) || null
+    return classes.find((c) => String(c.id) === String(student.class_id)) || null
   }
 
   function getMaxContribution(studentId) {
     const classe = getClassOfStudent(studentId)
     if (!classe) return 0
 
+    const contributionParBloc = getContributionParBlocAmount(studentId)
+
     const MAX_BY_YEAR = {
-      1: 5000 * 11,
-      2: 5000 * 9,
-      3: 5000 * 7,
+      1: contributionParBloc * 11,
+      2: contributionParBloc * 9,
+      3: contributionParBloc * 7,
     }
 
-    let max = MAX_BY_YEAR[Number(classe.annee)] || 0
-
-    if (isCouple(studentId)) {
-      max = max / 2
-    }
-
-    return max
+    return MAX_BY_YEAR[Number(classe.annee)] || 0
   }
 
   function getStudentContributionPaid(studentId) {
-    const total = getStudentContributionPaidTotal(studentId)
-    return total / getCoupleSize(studentId)
+    return getStudentContributionPaidTotal(studentId)
   }
 
   function getStudentInscriptionPaid(studentId) {
-    const total = getStudentInscriptionPaidTotal(studentId)
-    return total / getCoupleSize(studentId)
+    return getStudentInscriptionPaidTotal(studentId)
   }
 
   function getStudentInscriptionExpected(studentId) {
-    return isCouple(studentId) ? INSCRIPTION_MONTANT / 2 : INSCRIPTION_MONTANT
+    return getInscriptionExpectedAmount(studentId)
   }
 
   function getStudentPresentCount(studentId) {
-    return presences
-      .filter((p) => p.student_id === studentId && p.statut === 'present')
+    const totalPresents = presences
+      .filter(
+        (p) =>
+          String(p.student_id) === String(studentId) &&
+          p.statut === 'present'
+      )
       .reduce((sum, presence) => {
-        const seance = seances.find((s) => s.id === presence.seance_id)
+        const seance = seances.find(
+          (s) => String(s.id) === String(presence.seance_id)
+        )
         return sum + countCoursesInSeance(seance?.chapitre)
       }, 0)
+
+    const totalRattrapages = rattrapages
+      .filter((r) => String(r.student_id) === String(studentId))
+      .reduce((sum, rattrapage) => {
+        const seance = seances.find(
+          (s) => String(s.id) === String(rattrapage.seance_id)
+        )
+        return sum + countCoursesInSeance(seance?.chapitre)
+      }, 0)
+
+    return totalPresents + totalRattrapages
   }
 
   function getStudentContributionExpected(studentId) {
-    const totalPresents = getStudentPresentCount(studentId)
-    const blocs = Math.floor(totalPresents / SEANCES_PAR_BLOC)
-    const total = blocs * CONTRIBUTION_PAR_BLOC
-
-    return isCouple(studentId) ? total / 2 : total
+    const totalCoursFaits = getStudentPresentCount(studentId)
+    const blocs = Math.floor(totalCoursFaits / SEANCES_PAR_BLOC)
+    return blocs * getContributionParBlocAmount(studentId)
   }
 
   function getStudentContributionRemaining(studentId) {
@@ -387,14 +440,9 @@ export default function PaiementsPage({ profile }) {
     if (
       !isAdmin &&
       assistantClassId &&
-      selectedStudent.class_id !== assistantClassId
+      String(selectedStudent.class_id) !== String(assistantClassId)
     ) {
       setMessage('Tu ne peux gérer que les paiements de ton centre')
-      return
-    }
-
-    if (selectedStudent?.couple_record_id && selectedStudent.sexe === 'femme') {
-      setMessage('Le paiement du couple doit être fait côté homme.')
       return
     }
 
@@ -409,7 +457,7 @@ export default function PaiementsPage({ profile }) {
       form.type_paiement === 'inscription' ||
       form.type_paiement === 'inscription_arrieree'
     ) {
-      const expectedTotal = INSCRIPTION_MONTANT
+      const expectedTotal = getStudentInscriptionExpected(form.student_id)
       const alreadyPaidTotal = getStudentInscriptionPaidTotal(form.student_id)
       const remainingTotal = expectedTotal - alreadyPaidTotal
 
@@ -428,10 +476,7 @@ export default function PaiementsPage({ profile }) {
       form.type_paiement === 'contribution' ||
       form.type_paiement === 'contribution_arrieree'
     ) {
-      const maxTotal = isCouple(form.student_id)
-        ? getMaxContribution(form.student_id) * 2
-        : getMaxContribution(form.student_id)
-
+      const maxTotal = getMaxContribution(form.student_id)
       const alreadyPaidTotal = getStudentContributionPaidTotal(form.student_id)
 
       if (maxTotal <= 0) {
@@ -497,8 +542,10 @@ export default function PaiementsPage({ profile }) {
 
     getPaiements()
     getStudents()
+    getCouples()
     getPresences()
     getSeances()
+    getRattrapages()
     getClasses()
   }
 
@@ -539,8 +586,10 @@ export default function PaiementsPage({ profile }) {
     setMessage('Paiement supprimé')
     getPaiements()
     getStudents()
+    getCouples()
     getPresences()
     getSeances()
+    getRattrapages()
     getClasses()
   }
 
@@ -551,16 +600,16 @@ export default function PaiementsPage({ profile }) {
   }
 
   function getPartnerName(student) {
-    if (!student?.couple_record_id) return 'Pas en couple'
+    if (!student) return 'Non'
 
-    const partner = students.find(
-      (s) =>
-        s.couple_record_id === student.couple_record_id &&
-        s.id !== student.id
+    const couple = couples.find(
+      (c) =>
+        String(c.student1_id) === String(student.id) ||
+        String(c.student2_id) === String(student.id)
     )
 
-    if (!partner) return 'Couple enregistré'
-    return `${partner.nom || ''} ${partner.prenom || ''}`.trim()
+    if (!couple) return 'Non'
+    return 'Oui'
   }
 
   const filteredStudents = useMemo(() => {
@@ -781,8 +830,8 @@ export default function PaiementsPage({ profile }) {
 
   function getTotalBlocsCumules() {
     return filteredStudents.reduce((sum, student) => {
-      const totalPresents = getStudentPresentCount(student.id)
-      const blocs = Math.floor(totalPresents / SEANCES_PAR_BLOC)
+      const totalCoursFaits = getStudentPresentCount(student.id)
+      const blocs = Math.floor(totalCoursFaits / SEANCES_PAR_BLOC)
       return sum + blocs
     }, 0)
   }
@@ -829,7 +878,7 @@ export default function PaiementsPage({ profile }) {
   }
 
   const selectedStudentInfo = useMemo(() => {
-    return students.find((s) => s.id === form.student_id) || null
+    return students.find((s) => String(s.id) === String(form.student_id)) || null
   }, [students, form.student_id])
 
   function getPeriodeLabel() {
@@ -893,6 +942,9 @@ export default function PaiementsPage({ profile }) {
           {selectedStudentInfo && (
             <div style={styles.infoPanel}>
               <p style={styles.infoLine}>
+                Couple : {isCouple(selectedStudentInfo.id) ? 'Oui' : 'Non'}
+              </p>
+              <p style={styles.infoLine}>
                 Inscription attendue : {getStudentInscriptionExpected(selectedStudentInfo.id)} FCFA
               </p>
               <p style={styles.infoLine}>
@@ -902,7 +954,10 @@ export default function PaiementsPage({ profile }) {
                 Reste inscription : {getStudentInscriptionRemaining(selectedStudentInfo.id)} FCFA
               </p>
               <p style={styles.infoLine}>
-                Séances suivies : {getStudentPresentCount(selectedStudentInfo.id)}
+                Cours faits : {getStudentPresentCount(selectedStudentInfo.id)}
+              </p>
+              <p style={styles.infoLine}>
+                Contribution par bloc : {getContributionParBlocAmount(selectedStudentInfo.id)} FCFA
               </p>
               <p style={styles.infoLine}>
                 Contribution attendue : {getStudentContributionExpected(selectedStudentInfo.id)} FCFA
@@ -1196,7 +1251,11 @@ export default function PaiementsPage({ profile }) {
                     </p>
 
                     <p style={styles.meta}>
-                      Séances suivies : {getStudentPresentCount(student.id)}
+                      Cours faits : {getStudentPresentCount(student.id)}
+                    </p>
+
+                    <p style={styles.meta}>
+                      Contribution par bloc : {getContributionParBlocAmount(student.id)} FCFA
                     </p>
 
                     <p style={styles.meta}>
