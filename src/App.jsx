@@ -9,10 +9,7 @@ import SeancesPage from './pages/SeancesPage'
 import PaiementsPage from './pages/PaiementsPage'
 import BilansPage from './pages/BilansPage'
 import AssistantLoginPage from './pages/AssistantLoginPage'
-
 import RattrapagesPage from './pages/RattrapagesPage'
-
-
 import PortalPage from './pages/PortalPage'
 import LoginPage from './pages/LoginPage'
 import MainMenu from './components/MainMenu'
@@ -35,6 +32,9 @@ export default function App() {
   const [assistantSession, setAssistantSession] = useState(null)
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [authError, setAuthError] = useState('')
+  const [hasBooted, setHasBooted] = useState(
+    sessionStorage.getItem('app_booted') === '1'
+  )
 
   useEffect(() => {
     let active = true
@@ -93,12 +93,12 @@ export default function App() {
 
         if (!active) return
 
-        setSession(null)
-        setProfile(null)
-        setAuthError('Impossible de charger la session.')
+        setAuthError('Impossible de vérifier la session pour le moment.')
       } finally {
         if (active) {
           setLoadingAuth(false)
+          setHasBooted(true)
+          sessionStorage.setItem('app_booted', '1')
         }
       }
     }
@@ -111,7 +111,7 @@ export default function App() {
       try {
         if (!active) return
 
-        setLoadingAuth(true)
+        setLoadingAuth(!!newSession)
         setAuthError('')
         setSession(newSession || null)
 
@@ -138,8 +138,6 @@ export default function App() {
 
         if (!active) return
 
-        setSession(null)
-        setProfile(null)
         setAuthError('Session indisponible pour le moment.')
       } finally {
         if (active) {
@@ -186,6 +184,8 @@ export default function App() {
     }
 
     localStorage.removeItem('assistant_session')
+    sessionStorage.removeItem('app_booted')
+    setHasBooted(false)
     setSession(null)
     setProfile(null)
     setAssistantSession(null)
@@ -203,6 +203,8 @@ export default function App() {
     }
 
     localStorage.removeItem('assistant_session')
+    sessionStorage.removeItem('app_booted')
+    setHasBooted(false)
     setSession(null)
     setProfile(null)
     setAssistantSession(null)
@@ -215,7 +217,7 @@ export default function App() {
     return <PortalPage onEnter={() => setEntered(true)} />
   }
 
-  if (loadingAuth) {
+  if (loadingAuth && !hasBooted) {
     return (
       <div style={styles.loadingPage}>
         <div style={styles.loadingBox}>
@@ -262,7 +264,7 @@ export default function App() {
     )
   }
 
-  if (session && !profile) {
+  if (session && !profile && loadingAuth) {
     return (
       <div style={styles.loadingPage}>
         <div style={styles.loadingBox}>
@@ -325,11 +327,10 @@ export default function App() {
     if (page === 'seances') {
       return <SeancesPage profile={activeProfile} />
     }
-  
+
     if (page === 'rattrapages') {
       return <RattrapagesPage profile={activeProfile} />
     }
-
 
     if (page === 'paiements') {
       return <PaiementsPage profile={activeProfile} />
@@ -352,7 +353,8 @@ export default function App() {
 
       return (
         <div style={styles.infoBox}>
-          Les assistants se connectent maintenant avec le code et le mot de passe de leur classe.
+          Les assistants se connectent maintenant avec le code et le mot de
+          passe de leur classe.
         </div>
       )
     }
@@ -387,15 +389,18 @@ const styles = {
     minHeight: '100vh',
     background: '#f7f1fb',
   },
+
   content: {
     paddingBottom: 30,
   },
+
   infoBox: {
     padding: 20,
     textAlign: 'center',
     color: '#2b0a78',
     fontWeight: 'bold',
   },
+
   loadingPage: {
     minHeight: '100vh',
     display: 'flex',
@@ -404,16 +409,19 @@ const styles = {
     background: '#f7f1fb',
     padding: 20,
   },
+
   loadingBox: {
     width: '100%',
     maxWidth: 420,
     textAlign: 'center',
   },
+
   loadingText: {
     fontSize: 24,
     color: '#666',
     marginBottom: 16,
   },
+
   errorText: {
     color: '#d91e18',
     fontSize: 16,
@@ -421,6 +429,7 @@ const styles = {
     marginBottom: 16,
     lineHeight: 1.5,
   },
+
   reloadButton: {
     display: 'block',
     width: '100%',
@@ -434,6 +443,7 @@ const styles = {
     fontSize: 16,
     fontWeight: 'bold',
   },
+
   resetButton: {
     display: 'block',
     width: '100%',
