@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-
 import { supabase } from '../supabaseClient'
 import StudentDetailPage from './StudentDetailPage'
 
@@ -37,14 +36,33 @@ export default function StudentsPage({ profile }) {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const certificatBoxRef = useRef(null)
 
+  const [smsFilter, setSmsFilter] = useState('tous')
+  const [smsType, setSmsType] = useState('rapide')
+  const [smsMessage, setSmsMessage] = useState('')
+  const [selectedStudentIds, setSelectedStudentIds] = useState([])
+  const [smsBatchSize, setSmsBatchSize] = useState(25)
+
   const isAdmin = profile?.role === 'admin'
   const assistantClassId =
     profile?.role === 'assistant' ? profile?.class_id : null
+
+  const defaultSmsMessages = {
+    inscription:
+      `Soyez bénis au Nom de PAPA JESUS-CHRIST,\n\nnous vous rappelons que votre inscription n’est pas encore soldée. Merci de vous rapprocher du centre pour régulariser votre situation.`,
+    contribution:
+      `Soyez bénis au Nom de PAPA JESUS-CHRIST,\n\nnous vous informons que votre contribution n’est pas encore à jour. Merci de vous rapprocher du centre pour régulariser votre situation.`,
+    absence:
+      `Soyez bénis au Nom de PAPA JESUS-CHRIST,\n\nnous avons constaté votre absence aux dernières séances. Merci de reprendre contact avec le centre pour la suite des enseignements.`,
+  }
 
   useEffect(() => {
     getClasses()
     getStudents()
   }, [profile])
+
+  useEffect(() => {
+    updateSmsMessage(smsType, smsFilter)
+  }, [])
 
   function countCoursesInSeance(chapitreText) {
     if (!chapitreText) return 0
@@ -137,6 +155,61 @@ export default function StudentsPage({ profile }) {
     setStudents(data || [])
   }
 
+  async function getStudentFinanceStats(studentId) {
+    const student = students.find((s) => String(s.id) === String(studentId))
+    if (!student) {
+      return {
+        inscriptionNonSoldee: false,
+        contributionNonSoldee: false,
+        absent: false,
+      }
+    }
+
+    const { data: paiementsData } = await supabase
+      .from('paiements')
+      .select('*')
+      .eq('student_id', studentId)
+
+    const { data: presencesData } = await supabase
+      .from('presences')
+      .select('*')
+      .eq('student_id', studentId)
+
+    const inscriptionPaid = (paiementsData || [])
+      .filter(
+        (p) =>
+          p.type_paiement === 'inscription' ||
+          p.type_paiement === 'inscription_arrieree'
+      )
+      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
+
+    const contributionPaid = (paiementsData || [])
+      .filter(
+        (p) =>
+          p.type_paiement === 'contribution' ||
+          p.type_paiement === 'contribution_arrieree'
+      )
+      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
+
+    const inscriptionExpected = student.est_en_couple ? 5000 : 10000
+    const contributionParBloc = student.est_en_couple ? 2500 : 5000
+
+    const presentCount = (presencesData || [])
+      .filter((p) => p.statut === 'present')
+      .length
+
+    const contributionExpected =
+      Math.floor(presentCount / 4) * contributionParBloc
+
+    const absent = (presencesData || []).some((p) => p.statut === 'absent')
+
+    return {
+      inscriptionNonSoldee: inscriptionPaid < inscriptionExpected,
+      contributionNonSoldee: contributionPaid < contributionExpected,
+      absent,
+    }
+  }
+
   function handleChange(e) {
     const { name, value } = e.target
     setForm((prev) => ({
@@ -182,6 +255,11 @@ export default function StudentsPage({ profile }) {
   function formatPhoneForLink(phone) {
     if (!phone) return ''
     return String(phone).replace(/[^\d+]/g, '')
+  }
+
+  function formatPhoneForSms(phone) {
+    if (!phone) return ''
+    return String(phone).replace(/[^\d+]/g, '').trim()
   }
 
   function openWhatsApp(phone) {
@@ -259,6 +337,100 @@ export default function StudentsPage({ profile }) {
       })
     }, 150)
   }
+
+  function updateSmsMessage(type, filter) {
+    if (type === 'generale') {
+      setSmsMessage('')
+      return
+    }
+
+    if (filter === 'inscription') {
+      setSmsMessage(defaultSmsMessages.inscription)
+      return
+    }
+
+    if (filter === 'contribution') {
+      setSmsMessage(defaultSmsMessages.contribution)
+      return
+    }
+
+    if (filter === 'absence') {
+      setSmsMessage(defaultSmsMessages.absence)
+      return
+    }
+
+    setSmsMessage(`Soyez bénis au Nom de PAPA JESUS-CHRIST,\n\n`)
+  }
+
+  function handleSmsFilterChange(e) {
+    const value = e.target.value
+    setSmsFilter(value)
+    setSelectedStudentIds([])
+    updateSmsMessage(smsType, value)
+  }
+
+  function handleSmsTypeChange(e) {
+    const value = e.target.value
+    setSmsType(value)
+    updateSmsMessage(value, smsFilter)
+  }
+
+  function toggleStudentSelection(studentId) {
+    setSelectedStudentIds((prev) => {
+      if (prev.includes(studentId)) {
+        return prev.filter((id) => id !== studentId)
+      }
+      return [...prev, studentId]
+    })
+  }
+
+  function getSelectedStudentsFromList(list) {
+    return list.filter((student) => selectedStudentIds.includes(student.id))
+  }
+
+  function getUniquePhonesFromStudents(list) {
+    const seen = new Set()
+
+    return list
+      .map((student) => formatPhoneForSms(student.telephone))
+      .filter((phone) => {
+        if (!phone) return false
+        if (seen.has(phone)) return false
+        seen.add(phone)
+        return true
+      })
+  }
+
+  function chunkArray(array, size) {
+    const chunks = []
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size))
+    }
+    return chunks
+  }
+
+  function openSmsAppForBatch(phoneBatch, messageText) {
+    if (!phoneBatch.length) {
+      setMessage('Aucun numéro valide dans ce lot')
+      return
+    }
+
+    const recipients = phoneBatch.join(',')
+    const encodedMessage = encodeURIComponent(messageText || '')
+    const smsUrl = `sms:${recipients}?body=${encodedMessage}`
+
+    window.location.href = smsUrl
+  }
+
+  function selectAllFilteredStudents(list) {
+    const ids = [...new Set(list.map((student) => student.id))]
+    setSelectedStudentIds(ids)
+  }
+
+  function clearStudentSelection() {
+    setSelectedStudentIds([])
+  }
+
   async function confirmCertificat() {
     if (!certificatStudentId || !certificatDate) {
       setMessage('Choisis la date de réception du certificat')
@@ -541,22 +713,91 @@ export default function StudentsPage({ profile }) {
     getStudents()
   }
 
+  async function sendSmsToSelectedStudents() {
+    if (!smsMessage.trim()) {
+      setMessage('Écris ou vérifie le message SMS')
+      return
+    }
+
+    let candidates = getSelectedStudentsFromList(smsFilteredStudents)
+
+    if (candidates.length === 0) {
+      setMessage('Sélectionne au moins un étudiant')
+      return
+    }
+
+    const filteredCandidates = []
+
+    for (const student of candidates) {
+      const stats = await getStudentFinanceStats(student.id)
+
+      if (smsFilter === 'tous') {
+        filteredCandidates.push(student)
+        continue
+      }
+
+      if (smsFilter === 'inscription' && stats.inscriptionNonSoldee) {
+        filteredCandidates.push(student)
+        continue
+      }
+
+      if (smsFilter === 'contribution' && stats.contributionNonSoldee) {
+        filteredCandidates.push(student)
+        continue
+      }
+
+      if (smsFilter === 'absence' && stats.absent) {
+        filteredCandidates.push(student)
+        continue
+      }
+    }
+
+    const uniquePhones = getUniquePhonesFromStudents(filteredCandidates)
+
+    if (uniquePhones.length === 0) {
+      setMessage('Aucun numéro valide pour ce filtre')
+      return
+    }
+
+    const lots = chunkArray(uniquePhones, Number(smsBatchSize || 25))
+
+    if (lots.length === 0) {
+      setMessage('Aucun lot à envoyer')
+      return
+    }
+
+    openSmsAppForBatch(lots[0], smsMessage)
+
+    if (lots.length > 1) {
+      setMessage(
+        `Lot 1/${lots.length} ouvert dans l'application SMS. ${uniquePhones.length} numéros valides trouvés.`
+      )
+    } else {
+      setMessage(
+        `${uniquePhones.length} numéro(s) prêt(s) dans l'application SMS.`
+      )
+    }
+  }
+
   const filteredStudents = students.filter((student) => {
     const query = search.trim().toLowerCase()
-    if (!query) return true
 
     const fullName = `${student.nom || ''} ${student.prenom || ''}`.toLowerCase()
     const matricule = (student.matricule || '').toLowerCase()
     const telephone = (student.telephone || '').toLowerCase()
     const email = (student.email || '').toLowerCase()
 
-    return (
+    const matchesSearch =
+      !query ||
       fullName.includes(query) ||
       matricule.includes(query) ||
       telephone.includes(query) ||
       email.includes(query)
-    )
+
+    return matchesSearch
   })
+
+  const smsFilteredStudents = filteredStudents
 
   if (selectedStudentId) {
     return (
@@ -878,6 +1119,75 @@ export default function StudentsPage({ profile }) {
           </div>
         )}
 
+        <div style={styles.smsBox}>
+          <h4 style={styles.smsTitle}>SMS étudiants</h4>
+
+          <select
+            style={styles.input}
+            value={smsFilter}
+            onChange={handleSmsFilterChange}
+          >
+            <option value="tous">Tous</option>
+            <option value="inscription">Inscription non soldé</option>
+            <option value="contribution">Contribution non soldé</option>
+            <option value="absence">Absence</option>
+          </select>
+
+          <select
+            style={styles.input}
+            value={smsType}
+            onChange={handleSmsTypeChange}
+          >
+            <option value="rapide">Information rapide</option>
+            <option value="generale">Information générale</option>
+          </select>
+
+          <select
+            style={styles.input}
+            value={smsBatchSize}
+            onChange={(e) => setSmsBatchSize(Number(e.target.value))}
+          >
+            <option value={25}>Lot de 25</option>
+            <option value={50}>Lot de 50</option>
+            <option value={100}>Lot de 100</option>
+            <option value={150}>Lot de 150</option>
+            <option value={200}>Lot de 200</option>
+          </select>
+
+          <textarea
+            style={styles.textarea}
+            placeholder="Message SMS"
+            value={smsMessage}
+            onChange={(e) => setSmsMessage(e.target.value)}
+          />
+
+          <div style={styles.smsActionRow}>
+            <button
+              type="button"
+              style={styles.secondaryButtonHalf}
+              onClick={() => selectAllFilteredStudents(smsFilteredStudents)}
+            >
+              Sélectionner tout
+            </button>
+
+            <button
+              type="button"
+              style={styles.secondaryButtonHalf}
+              onClick={clearStudentSelection}
+            >
+              Désélectionner tout
+            </button>
+          </div>
+
+          <button
+            type="button"
+            style={styles.addButton}
+            onClick={sendSmsToSelectedStudents}
+          >
+            Envoyer SMS
+          </button>
+        </div>
+
         <input
           style={styles.input}
           placeholder="Rechercher par nom, matricule, téléphone ou email..."
@@ -891,6 +1201,14 @@ export default function StudentsPage({ profile }) {
           filteredStudents.map((s) => (
             <div key={s.id} style={styles.studentCard}>
               <div style={styles.studentTopRow}>
+                <div style={styles.selectionRow}>
+                  <input
+                    type="checkbox"
+                    checked={selectedStudentIds.includes(s.id)}
+                    onChange={() => toggleStudentSelection(s.id)}
+                  />
+                </div>
+
                 <div style={styles.nameRow}>
                   <strong style={styles.studentName}>
                     {s.nom} {s.prenom}
@@ -994,6 +1312,20 @@ const styles = {
     color: '#333',
   },
 
+  textarea: {
+    width: '100%',
+    minHeight: 120,
+    padding: 14,
+    marginBottom: 12,
+    borderRadius: 14,
+    border: '2px solid #d8c8ef',
+    fontSize: 16,
+    boxSizing: 'border-box',
+    resize: 'vertical',
+    background: '#fff',
+    color: '#333',
+  },
+
   infoBox: {
     width: '100%',
     padding: 14,
@@ -1023,6 +1355,23 @@ const styles = {
     textAlign: 'center',
   },
 
+  smsBox: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    border: '2px solid #eadcf9',
+    background: '#fbf8ff',
+  },
+
+  smsTitle: {
+    marginTop: 0,
+    marginBottom: 12,
+    color: '#2b0a78',
+    textAlign: 'center',
+    fontWeight: 'bold',
+    fontSize: 20,
+  },
+
   addButton: {
     width: '100%',
     padding: 14,
@@ -1047,6 +1396,18 @@ const styles = {
     fontSize: 16,
   },
 
+  secondaryButtonHalf: {
+    flex: 1,
+    minWidth: 140,
+    padding: 14,
+    borderRadius: 14,
+    border: '2px solid #d8c8ef',
+    background: '#fff',
+    color: '#2b0a78',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+
   studentCard: {
     borderRadius: 22,
     padding: 18,
@@ -1061,6 +1422,19 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: 12,
+  },
+
+  selectionRow: {
+    display: 'flex',
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+
+  smsActionRow: {
+    display: 'flex',
+    gap: 10,
+    marginBottom: 10,
+    flexWrap: 'wrap',
   },
 
   nameRow: {
