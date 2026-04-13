@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient'
 
 const emptyForm = {
   nom: '',
+  sexe: '',
   ministere: '',
   date_formation: '',
   date_assistanat: '',
@@ -101,6 +102,7 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
   function applyProfileToForm(data) {
     setForm({
       nom: data?.nom || '',
+      sexe: data?.sexe || '',
       ministere: data?.ministere || '',
       date_formation: data?.date_formation || '',
       date_assistanat: data?.date_assistanat || '',
@@ -139,6 +141,7 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
       .from('profiles')
       .update({
         nom: form.nom.trim(),
+        sexe: form.sexe || null,
         ministere: form.ministere.trim(),
         date_formation: form.date_formation || null,
         date_assistanat: form.date_assistanat || null,
@@ -189,6 +192,17 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
             onChange={handleChange}
           />
 
+          <select
+            style={styles.input}
+            name="sexe"
+            value={form.sexe}
+            onChange={handleChange}
+          >
+            <option value="">Choisir le sexe</option>
+            <option value="homme">Homme</option>
+            <option value="femme">Femme</option>
+          </select>
+
           <input
             style={styles.input}
             name="ministere"
@@ -197,21 +211,27 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
             onChange={handleChange}
           />
 
-          <input
-            style={styles.input}
-            type="date"
-            name="date_formation"
-            value={form.date_formation}
-            onChange={handleChange}
-          />
+          <div style={styles.fieldBlock}>
+            <label style={styles.fieldLabel}>Date de formation</label>
+            <input
+              style={styles.input}
+              type="date"
+              name="date_formation"
+              value={form.date_formation}
+              onChange={handleChange}
+            />
+          </div>
 
-          <input
-            style={styles.input}
-            type="date"
-            name="date_assistanat"
-            value={form.date_assistanat}
-            onChange={handleChange}
-          />
+          <div style={styles.fieldBlock}>
+            <label style={styles.fieldLabel}>Date d’assistanat</label>
+            <input
+              style={styles.input}
+              type="date"
+              name="date_assistanat"
+              value={form.date_assistanat}
+              onChange={handleChange}
+            />
+          </div>
 
           <input
             style={styles.input}
@@ -263,6 +283,11 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
         <div style={styles.detailRow}>
           <span style={styles.label}>Nom</span>
           <span style={styles.value}>{form.nom || '-'}</span>
+        </div>
+
+        <div style={styles.detailRow}>
+          <span style={styles.label}>Sexe</span>
+          <span style={styles.value}>{form.sexe || '-'}</span>
         </div>
 
         <div style={styles.detailRow}>
@@ -343,6 +368,18 @@ const styles = {
     color: '#6f5b84',
     fontSize: 24,
     fontWeight: 'bold',
+  },
+
+  fieldBlock: {
+    marginBottom: 12,
+  },
+
+  fieldLabel: {
+    display: 'block',
+    marginBottom: 8,
+    color: '#5f5473',
+    fontWeight: 'bold',
+    fontSize: 15,
   },
 
   input: {

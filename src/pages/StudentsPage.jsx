@@ -67,6 +67,14 @@ export default function StudentsPage({ profile }) {
     updateSmsMessage(smsType, smsFilter)
   }, [])
 
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setShowSmsPanel(false)
+      setSelectedStudentIds([])
+    }
+  }, [isAdmin])
+
   useEffect(() => {
     if (students.length > 0) {
       loadStudentSmsStats()
@@ -1093,13 +1101,17 @@ export default function StudentsPage({ profile }) {
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Liste</h3>
 
-        <button
-          type="button"
-          style={styles.addButton}
-          onClick={() => setShowSmsPanel((prev) => !prev)}
-        >
-          {showSmsPanel ? 'Fermer message' : 'Message'}
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            style={styles.addButton}
+            onClick={() => setShowSmsPanel((prev) => !prev)}
+          >
+            {showSmsPanel ? 'Fermer message' : 'Message'}
+          </button>
+        )}
+
+
 
         {isAdmin && certificatStudentId && (
           <div ref={certificatBoxRef} style={styles.certificatBox}>
@@ -1136,7 +1148,7 @@ export default function StudentsPage({ profile }) {
           </div>
         )}
 
-        {showSmsPanel && (
+        {isAdmin && showSmsPanel && (
           <div style={styles.smsBox}>
             <h4 style={styles.smsTitle}>SMS étudiants</h4>
 
@@ -1229,6 +1241,8 @@ export default function StudentsPage({ profile }) {
           </div>
         )}
 
+
+
         <input
           style={styles.input}
           placeholder="Rechercher par nom, matricule, téléphone ou email..."
@@ -1242,7 +1256,10 @@ export default function StudentsPage({ profile }) {
           filteredStudents.map((s) => (
             <div key={s.id} style={styles.studentCard}>
               <div style={styles.studentTopRow}>
-                {showSmsPanel && (
+
+
+
+                {isAdmin && showSmsPanel && (
                   <div style={styles.selectionRow}>
                     <input
                       type="checkbox"
