@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import CentreDetailPage from './CentreDetailPage'
+import AssistantProfilePage from './AssistantProfilePage'
+
 const emptyClassForm = {
   nom: '',
   annee: '1',
@@ -10,11 +12,12 @@ const emptyClassForm = {
   assistant_password: '',
 }
 
-export default function ClassesPage() {
+export default function ClassesPage({ profile }) {
   const [classes, setClasses] = useState([])
   const [form, setForm] = useState(emptyClassForm)
   const [editingId, setEditingId] = useState(null)
   const [selectedClassId, setSelectedClassId] = useState(null)
+  const [selectedAssistantClass, setSelectedAssistantClass] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [search, setSearch] = useState('')
@@ -43,19 +46,91 @@ export default function ClassesPage() {
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
+  function extractLastNumber(value) {
+    const match = String(value || '').match(/(\d+)$/)
+    return match ? Number(match[1]) : 0
+  }
+
+  function padNumber(value, size) {
+    return String(value).padStart(size, '0')
+  }
+
+  function getVillePrefix(ville) {
+    const clean = String(ville || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z]/g, '')
+      .trim()
+
+    if (!clean) return 'Cae'
+
+    const lower = clean.toLowerCase()
+
+    if (lower.startsWith('abidjan')) return 'Abj'
+    if (lower.startsWith('cocody')) return 'Coc'
+    if (lower.startsWith('bouake')) return 'Bou'
+    if (lower.startsWith('yamoussoukro')) return 'Yam'
+    if (lower.startsWith('korhogo')) return 'Kor'
+    if (lower.startsWith('daloa')) return 'Dal'
+    if (lower.startsWith('sanpedro')) return 'San'
+
+    return clean.charAt(0).toUpperCase() + clean.slice(1, 3).toLowerCase()
+  }
+
+  function generateNextAssistantCode(existingClasses) {
+    const maxNumber = (existingClasses || []).reduce((max, item) => {
+      const current = extractLastNumber(item.assistant_code)
+      return current > max ? current : max
+    }, 0)
+
+    return `CAEJ${padNumber(maxNumber + 1, 5)}`
+  }
+
+  function generateNextAssistantPassword(existingClasses, ville) {
+    const prefix = getVillePrefix(ville)
+
+    const samePrefix = (existingClasses || []).filter((item) =>
+      String(item.assistant_password || '').startsWith(prefix)
+    )
+
+    const maxNumber = samePrefix.reduce((max, item) => {
+      const current = extractLastNumber(item.assistant_password)
+      return current > max ? current : max
+    }, 0)
+
+    return `${prefix}${padNumber(maxNumber + 1, 4)}`
+  }
 
   async function saveClass(e) {
     e.preventDefault()
     setMessage('')
 
     const nomNettoye = form.nom.trim().toLowerCase()
-    const codeNettoye = form.assistant_code.trim()
+
+    if (!form.nom.trim()) {
+      setMessage('Le nom du centre est obligatoire')
+      return
+    }
+
+    if (!form.ville.trim()) {
+      setMessage('La ville est obligatoire')
+      return
+    }
+
+    const generatedAssistantCode = editingId
+      ? form.assistant_code.trim()
+      : generateNextAssistantCode(classes)
+
+    const generatedAssistantPassword = editingId
+      ? form.assistant_password.trim()
+      : generateNextAssistantPassword(classes, form.ville)
 
     const duplicate = classes.find((c) => {
       if (editingId && String(c.id) === String(editingId)) return false
 
       const sameNom = (c.nom || '').trim().toLowerCase() === nomNettoye
-      const sameCode = (c.assistant_code || '').trim() === codeNettoye
+      const sameCode =
+        (c.assistant_code || '').trim() === generatedAssistantCode
 
       return sameNom || sameCode
     })
@@ -66,25 +141,10 @@ export default function ClassesPage() {
         return
       }
 
-      if ((duplicate.assistant_code || '').trim() === codeNettoye) {
+      if ((duplicate.assistant_code || '').trim() === generatedAssistantCode) {
         setMessage('Ce code assistant existe déjà')
         return
       }
-    }
-
-    if (!form.nom.trim()) {
-      setMessage('Le nom du centre est obligatoire')
-      return
-    }
-
-    if (!form.assistant_code.trim()) {
-      setMessage('Le code assistant est obligatoire')
-      return
-    }
-
-    if (!form.assistant_password.trim()) {
-      setMessage('Le mot de passe assistant est obligatoire')
-      return
     }
 
     setLoading(true)
@@ -94,8 +154,8 @@ export default function ClassesPage() {
       annee: Number(form.annee),
       pays: form.pays.trim(),
       ville: form.ville.trim(),
-      assistant_code: form.assistant_code.trim(),
-      assistant_password: form.assistant_password.trim(),
+      assistant_code: generatedAssistantCode,
+      assistant_password: generatedAssistantPassword,
     }
 
     let error = null
@@ -162,12 +222,10 @@ export default function ClassesPage() {
     setMessage('')
   }
 
-// Commentaire
   async function deleteClass(id) {
     const ok = window.confirm('Supprimer ce centre ?')
     if (!ok) return
 
-    // Vérifier s'il y a des étudiants
     const { count: studentsCount, error: studentsError } = await supabase
       .from('students')
       .select('*', { count: 'exact', head: true })
@@ -175,11 +233,10 @@ export default function ClassesPage() {
 
     if (studentsError) {
       console.log(studentsError)
-      setMessage("Erreur vérification étudiants")
+      setMessage('Erreur vérification étudiants')
       return
     }
 
-    // Vérifier s'il y a des séances
     const { count: seancesCount, error: seancesError } = await supabase
       .from('seances')
       .select('*', { count: 'exact', head: true })
@@ -187,19 +244,17 @@ export default function ClassesPage() {
 
     if (seancesError) {
       console.log(seancesError)
-      setMessage("Erreur vérification séances")
+      setMessage('Erreur vérification séances')
       return
     }
 
-    // Bloquer si centre non vide
     if ((studentsCount || 0) > 0 || (seancesCount || 0) > 0) {
       setMessage(
-        "Impossible de supprimer : ce centre contient encore des étudiants ou des séances"
+        'Impossible de supprimer : ce centre contient encore des étudiants ou des séances'
       )
       return
     }
 
-    // Suppression
     const { error } = await supabase
       .from('classes')
       .delete()
@@ -214,6 +269,28 @@ export default function ClassesPage() {
     setMessage('Centre supprimé avec succès')
     getClasses()
   }
+
+  async function openAssistantProfile(classe) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'assistant')
+      .eq('class_id', classe.id)
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.log(error)
+      setMessage('Erreur ouverture profil assistant')
+      return
+    }
+
+    setSelectedAssistantClass({
+      classId: classe.id,
+      assistantId: data?.id || null,
+    })
+  }
+
   const filteredClasses = useMemo(() => {
     const term = search.trim().toLowerCase()
 
@@ -234,6 +311,16 @@ export default function ClassesPage() {
       return text.includes(term)
     })
   }, [classes, search])
+
+  if (selectedAssistantClass) {
+    return (
+      <AssistantProfilePage
+        profile={profile}
+        assistantId={selectedAssistantClass.assistantId}
+        classId={selectedAssistantClass.classId}
+      />
+    )
+  }
 
   if (selectedClassId) {
     return (
@@ -290,24 +377,29 @@ export default function ClassesPage() {
             onChange={handleChange}
           />
 
-
           <input
             style={styles.input}
             name="assistant_code"
             placeholder="Code assistant"
-            value={form.assistant_code}
-            onChange={handleChange}
+            value={
+              editingId
+                ? form.assistant_code
+                : generateNextAssistantCode(classes)
+            }
+            readOnly
           />
 
           <input
             style={styles.input}
             name="assistant_password"
             placeholder="Mot de passe assistant"
-            value={form.assistant_password}
-            onChange={handleChange}
+            value={
+              editingId
+                ? form.assistant_password
+                : generateNextAssistantPassword(classes, form.ville)
+            }
+            readOnly
           />
-
-
 
           <button
             style={styles.primaryButtonFull}
@@ -362,8 +454,12 @@ export default function ClassesPage() {
               <p style={styles.meta}>Année : {classe.annee}</p>
               <p style={styles.meta}>Pays : {classe.pays || '-'}</p>
               <p style={styles.meta}>Ville : {classe.ville || '-'}</p>
-              <p style={styles.meta}>Code assistant : {classe.assistant_code || '-'}</p>
-              <p style={styles.meta}>Mot de passe assistant : {classe.assistant_password || '-'}</p>
+              <p style={styles.meta}>
+                Code assistant : {classe.assistant_code || '-'}
+              </p>
+              <p style={styles.meta}>
+                Mot de passe assistant : {classe.assistant_password || '-'}
+              </p>
 
               <div style={styles.row}>
                 <button
@@ -372,6 +468,14 @@ export default function ClassesPage() {
                   onClick={() => setSelectedClassId(classe.id)}
                 >
                   Voir
+                </button>
+
+                <button
+                  type="button"
+                  style={styles.profileButton}
+                  onClick={() => openAssistantProfile(classe)}
+                >
+                  Profil assistant
                 </button>
 
                 <button
@@ -474,6 +578,16 @@ const styles = {
     borderRadius: 10,
     border: 'none',
     background: '#1565c0',
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  profileButton: {
+    padding: '10px 14px',
+    borderRadius: 10,
+    border: 'none',
+    background: '#6f5b84',
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',

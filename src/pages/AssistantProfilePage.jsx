@@ -13,70 +13,84 @@ const emptyForm = {
   centres_assistes: '',
 }
 
-export default function AssistantProfilePage({ profile, assistantId = null }) {
+export default function AssistantProfilePage({
+  profile,
+  assistantId = null,
+  classId = null,
+}) {
   const [form, setForm] = useState(emptyForm)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
   const [resolvedAssistantId, setResolvedAssistantId] = useState(null)
+  const [resolvedClassId, setResolvedClassId] = useState(classId || null)
 
   const isAdmin = profile?.role === 'admin'
+  const isAssistant = profile?.role === 'assistant'
 
   useEffect(() => {
     resolveAssistantAndLoad()
-  }, [profile, assistantId])
+  }, [profile, assistantId, classId])
 
   async function resolveAssistantAndLoad() {
     setLoadingData(true)
     setMessage('')
     setResolvedAssistantId(null)
+    setResolvedClassId(classId || null)
+    setForm(emptyForm)
 
     try {
+      if (isAssistant && profile?.id) {
+        setResolvedAssistantId(profile.id)
+        setResolvedClassId(profile?.class_id || null)
+        await loadAssistantById(profile.id)
+        return
+      }
+
       if (isAdmin && assistantId) {
         setResolvedAssistantId(assistantId)
         await loadAssistantById(assistantId)
         return
       }
 
-      if (profile?.id) {
-        setResolvedAssistantId(profile.id)
-        await loadAssistantById(profile.id)
-        return
-      }
-
-      if (profile?.role === 'assistant' && profile?.class_id) {
+      if (isAdmin && classId) {
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('role', 'assistant')
-          .eq('class_id', profile.class_id)
+          .eq('class_id', classId)
           .limit(1)
           .maybeSingle()
 
         if (error) {
           console.log(error)
-          setMessage("Erreur chargement profil assistant")
+          setMessage('Erreur chargement profil assistant')
           setLoadingData(false)
           return
         }
 
-        if (!data) {
-          setMessage("Profil assistant introuvable")
+        if (data) {
+          setResolvedAssistantId(data.id)
+          setResolvedClassId(data.class_id || classId)
+          applyProfileToForm(data)
           setLoadingData(false)
           return
         }
 
-        setResolvedAssistantId(data.id)
-        applyProfileToForm(data)
+        setResolvedAssistantId(null)
+        setResolvedClassId(classId)
+        setForm(emptyForm)
         setLoadingData(false)
         return
       }
 
-      setMessage("Profil assistant introuvable")
+      setResolvedAssistantId(null)
+      setResolvedClassId(classId || null)
+      setForm(emptyForm)
       setLoadingData(false)
     } catch (error) {
       console.log(error)
-      setMessage("Erreur chargement profil assistant")
+      setMessage('Erreur chargement profil assistant')
       setLoadingData(false)
     }
   }
@@ -90,11 +104,12 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
 
     if (error) {
       console.log(error)
-      setMessage("Erreur chargement profil assistant")
+      setMessage('Erreur chargement profil assistant')
       setLoadingData(false)
       return
     }
 
+    setResolvedClassId(data?.class_id || classId || null)
     applyProfileToForm(data)
     setLoadingData(false)
   }
@@ -125,11 +140,6 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
     e.preventDefault()
     setMessage('')
 
-    if (!resolvedAssistantId) {
-      setMessage('Assistant introuvable')
-      return
-    }
-
     if (!form.nom.trim()) {
       setMessage('Le nom est obligatoire')
       return
@@ -137,31 +147,56 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
 
     setLoading(true)
 
-    const { error } = await supabase
+    const payload = {
+      role: 'assistant',
+      class_id: resolvedClassId || null,
+      nom: form.nom.trim(),
+      sexe: form.sexe || null,
+      ministere: form.ministere.trim(),
+      date_formation: form.date_formation || null,
+      date_assistanat: form.date_assistanat || null,
+      telephone: form.telephone.trim(),
+      pays: form.pays.trim(),
+      ville: form.ville.trim(),
+      centres_assistes: form.centres_assistes.trim(),
+    }
+
+    if (resolvedAssistantId) {
+      const { error } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', resolvedAssistantId)
+
+      setLoading(false)
+
+      if (error) {
+        console.log(error)
+        setMessage('Erreur enregistrement profil assistant')
+        return
+      }
+
+      setMessage('Profil assistant modifié')
+      await loadAssistantById(resolvedAssistantId)
+      return
+    }
+
+    const { data, error } = await supabase
       .from('profiles')
-      .update({
-        nom: form.nom.trim(),
-        sexe: form.sexe || null,
-        ministere: form.ministere.trim(),
-        date_formation: form.date_formation || null,
-        date_assistanat: form.date_assistanat || null,
-        telephone: form.telephone.trim(),
-        pays: form.pays.trim(),
-        ville: form.ville.trim(),
-        centres_assistes: form.centres_assistes.trim(),
-      })
-      .eq('id', resolvedAssistantId)
+      .insert([payload])
+      .select()
+      .single()
 
     setLoading(false)
 
     if (error) {
       console.log(error)
-      setMessage('Erreur enregistrement profil assistant')
+      setMessage('Erreur création profil assistant')
       return
     }
 
-    setMessage('Profil assistant enregistré')
-    await loadAssistantById(resolvedAssistantId)
+    setResolvedAssistantId(data.id)
+    setMessage('Profil assistant créé')
+    await loadAssistantById(data.id)
   }
 
   if (loadingData) {
@@ -211,27 +246,21 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
             onChange={handleChange}
           />
 
-          <div style={styles.fieldBlock}>
-            <label style={styles.fieldLabel}>Date de formation</label>
-            <input
-              style={styles.input}
-              type="date"
-              name="date_formation"
-              value={form.date_formation}
-              onChange={handleChange}
-            />
-          </div>
+          <input
+            style={styles.input}
+            type="date"
+            name="date_formation"
+            value={form.date_formation}
+            onChange={handleChange}
+          />
 
-          <div style={styles.fieldBlock}>
-            <label style={styles.fieldLabel}>Date d’assistanat</label>
-            <input
-              style={styles.input}
-              type="date"
-              name="date_assistanat"
-              value={form.date_assistanat}
-              onChange={handleChange}
-            />
-          </div>
+          <input
+            style={styles.input}
+            type="date"
+            name="date_assistanat"
+            value={form.date_assistanat}
+            onChange={handleChange}
+          />
 
           <input
             style={styles.input}
@@ -270,7 +299,11 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
             type="submit"
             disabled={loading}
           >
-            {loading ? 'Enregistrement...' : 'Enregistrer'}
+            {loading
+              ? 'Enregistrement...'
+              : resolvedAssistantId
+              ? 'Modifier profil'
+              : 'Créer profil assistant'}
           </button>
         </form>
 
@@ -321,6 +354,11 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
         </div>
 
         <div style={styles.detailRow}>
+          <span style={styles.label}>Centre lié</span>
+          <span style={styles.value}>{resolvedClassId || '-'}</span>
+        </div>
+
+        <div style={styles.detailRow}>
           <span style={styles.label}>Centres assistés</span>
           <span style={{ ...styles.value, whiteSpace: 'pre-wrap' }}>
             {form.centres_assistes || '-'}
@@ -368,18 +406,6 @@ const styles = {
     color: '#6f5b84',
     fontSize: 24,
     fontWeight: 'bold',
-  },
-
-  fieldBlock: {
-    marginBottom: 12,
-  },
-
-  fieldLabel: {
-    display: 'block',
-    marginBottom: 8,
-    color: '#5f5473',
-    fontWeight: 'bold',
-    fontSize: 15,
   },
 
   input: {
