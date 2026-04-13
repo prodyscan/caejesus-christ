@@ -17,33 +17,88 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
+  const [resolvedAssistantId, setResolvedAssistantId] = useState(null)
 
   const isAdmin = profile?.role === 'admin'
-  const targetAssistantId = isAdmin && assistantId ? assistantId : profile?.id
 
   useEffect(() => {
-    if (!targetAssistantId) return
-    loadAssistant()
-  }, [targetAssistantId])
+    resolveAssistantAndLoad()
+  }, [profile, assistantId])
 
-  async function loadAssistant() {
+  async function resolveAssistantAndLoad() {
     setLoadingData(true)
     setMessage('')
+    setResolvedAssistantId(null)
 
+    try {
+      if (isAdmin && assistantId) {
+        setResolvedAssistantId(assistantId)
+        await loadAssistantById(assistantId)
+        return
+      }
+
+      if (profile?.id) {
+        setResolvedAssistantId(profile.id)
+        await loadAssistantById(profile.id)
+        return
+      }
+
+      if (profile?.role === 'assistant' && profile?.class_id) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'assistant')
+          .eq('class_id', profile.class_id)
+          .limit(1)
+          .maybeSingle()
+
+        if (error) {
+          console.log(error)
+          setMessage("Erreur chargement profil assistant")
+          setLoadingData(false)
+          return
+        }
+
+        if (!data) {
+          setMessage("Profil assistant introuvable")
+          setLoadingData(false)
+          return
+        }
+
+        setResolvedAssistantId(data.id)
+        applyProfileToForm(data)
+        setLoadingData(false)
+        return
+      }
+
+      setMessage("Profil assistant introuvable")
+      setLoadingData(false)
+    } catch (error) {
+      console.log(error)
+      setMessage("Erreur chargement profil assistant")
+      setLoadingData(false)
+    }
+  }
+
+  async function loadAssistantById(id) {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', targetAssistantId)
+      .eq('id', id)
       .single()
-
-    setLoadingData(false)
 
     if (error) {
       console.log(error)
       setMessage("Erreur chargement profil assistant")
+      setLoadingData(false)
       return
     }
 
+    applyProfileToForm(data)
+    setLoadingData(false)
+  }
+
+  function applyProfileToForm(data) {
     setForm({
       nom: data?.nom || '',
       ministere: data?.ministere || '',
@@ -68,7 +123,7 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
     e.preventDefault()
     setMessage('')
 
-    if (!targetAssistantId) {
+    if (!resolvedAssistantId) {
       setMessage('Assistant introuvable')
       return
     }
@@ -92,7 +147,7 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
         ville: form.ville.trim(),
         centres_assistes: form.centres_assistes.trim(),
       })
-      .eq('id', targetAssistantId)
+      .eq('id', resolvedAssistantId)
 
     setLoading(false)
 
@@ -103,7 +158,7 @@ export default function AssistantProfilePage({ profile, assistantId = null }) {
     }
 
     setMessage('Profil assistant enregistré')
-    loadAssistant()
+    await loadAssistantById(resolvedAssistantId)
   }
 
   if (loadingData) {

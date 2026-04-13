@@ -36,11 +36,14 @@ export default function StudentsPage({ profile }) {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const certificatBoxRef = useRef(null)
 
+  const [showSmsPanel, setShowSmsPanel] = useState(false)
   const [smsFilter, setSmsFilter] = useState('tous')
   const [smsType, setSmsType] = useState('rapide')
   const [smsMessage, setSmsMessage] = useState('')
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [smsBatchSize, setSmsBatchSize] = useState(25)
+  const [sentStudentIds, setSentStudentIds] = useState([])
+  const [studentSmsStats, setStudentSmsStats] = useState({})
 
   const isAdmin = profile?.role === 'admin'
   const assistantClassId =
@@ -63,6 +66,14 @@ export default function StudentsPage({ profile }) {
   useEffect(() => {
     updateSmsMessage(smsType, smsFilter)
   }, [])
+
+  useEffect(() => {
+    if (students.length > 0) {
+      loadStudentSmsStats()
+    } else {
+      setStudentSmsStats({})
+    }
+  }, [students])
 
   function countCoursesInSeance(chapitreText) {
     if (!chapitreText) return 0
@@ -155,59 +166,72 @@ export default function StudentsPage({ profile }) {
     setStudents(data || [])
   }
 
-  async function getStudentFinanceStats(studentId) {
-    const student = students.find((s) => String(s.id) === String(studentId))
-    if (!student) {
-      return {
-        inscriptionNonSoldee: false,
-        contributionNonSoldee: false,
-        absent: false,
-      }
-    }
-
-    const { data: paiementsData } = await supabase
+  async function loadStudentSmsStats() {
+    const { data: paiementsData, error: paiementsError } = await supabase
       .from('paiements')
       .select('*')
-      .eq('student_id', studentId)
 
-    const { data: presencesData } = await supabase
+    const { data: presencesData, error: presencesError } = await supabase
       .from('presences')
       .select('*')
-      .eq('student_id', studentId)
 
-    const inscriptionPaid = (paiementsData || [])
-      .filter(
-        (p) =>
-          p.type_paiement === 'inscription' ||
-          p.type_paiement === 'inscription_arrieree'
-      )
-      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
-
-    const contributionPaid = (paiementsData || [])
-      .filter(
-        (p) =>
-          p.type_paiement === 'contribution' ||
-          p.type_paiement === 'contribution_arrieree'
-      )
-      .reduce((sum, p) => sum + Number(p.montant || 0), 0)
-
-    const inscriptionExpected = student.est_en_couple ? 5000 : 10000
-    const contributionParBloc = student.est_en_couple ? 2500 : 5000
-
-    const presentCount = (presencesData || [])
-      .filter((p) => p.statut === 'present')
-      .length
-
-    const contributionExpected =
-      Math.floor(presentCount / 4) * contributionParBloc
-
-    const absent = (presencesData || []).some((p) => p.statut === 'absent')
-
-    return {
-      inscriptionNonSoldee: inscriptionPaid < inscriptionExpected,
-      contributionNonSoldee: contributionPaid < contributionExpected,
-      absent,
+    if (paiementsError) {
+      console.log(paiementsError)
+      return
     }
+
+    if (presencesError) {
+      console.log(presencesError)
+      return
+    }
+
+    const statsMap = {}
+
+    students.forEach((student) => {
+      const studentPaiements = (paiementsData || []).filter(
+        (p) => String(p.student_id) === String(student.id)
+      )
+
+      const studentPresences = (presencesData || []).filter(
+        (p) => String(p.student_id) === String(student.id)
+      )
+
+      const inscriptionPaid = studentPaiements
+        .filter(
+          (p) =>
+            p.type_paiement === 'inscription' ||
+            p.type_paiement === 'inscription_arrieree'
+        )
+        .reduce((sum, p) => sum + Number(p.montant || 0), 0)
+
+      const contributionPaid = studentPaiements
+        .filter(
+          (p) =>
+            p.type_paiement === 'contribution' ||
+            p.type_paiement === 'contribution_arrieree'
+        )
+        .reduce((sum, p) => sum + Number(p.montant || 0), 0)
+
+      const inscriptionExpected = student.est_en_couple ? 5000 : 10000
+      const contributionParBloc = student.est_en_couple ? 2500 : 5000
+
+      const presentCount = studentPresences.filter(
+        (p) => p.statut === 'present'
+      ).length
+
+      const contributionExpected =
+        Math.floor(presentCount / 4) * contributionParBloc
+
+      const absent = studentPresences.some((p) => p.statut === 'absent')
+
+      statsMap[student.id] = {
+        inscriptionNonSoldee: inscriptionPaid < inscriptionExpected,
+        contributionNonSoldee: contributionPaid < contributionExpected,
+        absent,
+      }
+    })
+
+    setStudentSmsStats(statsMap)
   }
 
   function handleChange(e) {
@@ -384,8 +408,13 @@ export default function StudentsPage({ profile }) {
     })
   }
 
-  function getSelectedStudentsFromList(list) {
-    return list.filter((student) => selectedStudentIds.includes(student.id))
+  function selectAllFilteredStudents(list) {
+    const ids = [...new Set(list.map((student) => student.id))]
+    setSelectedStudentIds(ids)
+  }
+
+  function clearStudentSelection() {
+    setSelectedStudentIds([])
   }
 
   function getUniquePhonesFromStudents(list) {
@@ -417,18 +446,56 @@ export default function StudentsPage({ profile }) {
 
     const recipients = phoneBatch.join(',')
     const encodedMessage = encodeURIComponent(messageText || '')
-    const smsUrl = `sms:${recipients}?body=${encodedMessage}`
-
-    window.location.href = smsUrl
+    window.location.href = `sms:${recipients}?body=${encodedMessage}`
   }
 
-  function selectAllFilteredStudents(list) {
-    const ids = [...new Set(list.map((student) => student.id))]
-    setSelectedStudentIds(ids)
+  function selectNextUnsentBatch(list) {
+    const remainingStudents = list.filter(
+      (student) =>
+        !sentStudentIds.includes(student.id) &&
+        formatPhoneForSms(student.telephone)
+    )
+
+    const nextBatch = remainingStudents.slice(0, Number(smsBatchSize || 25))
+    setSelectedStudentIds(nextBatch.map((student) => student.id))
   }
 
-  function clearStudentSelection() {
-    setSelectedStudentIds([])
+  function sendSmsToSelectedStudents(list) {
+    if (!smsMessage.trim()) {
+      setMessage('Écris ou vérifie le message SMS')
+      return
+    }
+
+    const selectedStudents = list.filter((student) =>
+      selectedStudentIds.includes(student.id)
+    )
+
+    if (selectedStudents.length === 0) {
+      setMessage('Sélectionne au moins un étudiant')
+      return
+    }
+
+    const uniquePhones = getUniquePhonesFromStudents(selectedStudents)
+
+    if (uniquePhones.length === 0) {
+      setMessage('Aucun numéro valide pour ce lot')
+      return
+    }
+
+    const lots = chunkArray(uniquePhones, Number(smsBatchSize || 25))
+    const treatedIds = selectedStudents.map((student) => student.id)
+
+    setSentStudentIds((prev) => [...new Set([...prev, ...treatedIds])])
+
+    openSmsAppForBatch(lots[0], smsMessage)
+
+    if (lots.length > 1) {
+      setMessage(`Lot 1/${lots.length} ouvert dans l'application SMS.`)
+    } else {
+      setMessage(
+        `${uniquePhones.length} numéro(s) prêt(s) dans l'application SMS.`
+      )
+    }
   }
 
   async function confirmCertificat() {
@@ -713,72 +780,6 @@ export default function StudentsPage({ profile }) {
     getStudents()
   }
 
-  async function sendSmsToSelectedStudents() {
-    if (!smsMessage.trim()) {
-      setMessage('Écris ou vérifie le message SMS')
-      return
-    }
-
-    let candidates = getSelectedStudentsFromList(smsFilteredStudents)
-
-    if (candidates.length === 0) {
-      setMessage('Sélectionne au moins un étudiant')
-      return
-    }
-
-    const filteredCandidates = []
-
-    for (const student of candidates) {
-      const stats = await getStudentFinanceStats(student.id)
-
-      if (smsFilter === 'tous') {
-        filteredCandidates.push(student)
-        continue
-      }
-
-      if (smsFilter === 'inscription' && stats.inscriptionNonSoldee) {
-        filteredCandidates.push(student)
-        continue
-      }
-
-      if (smsFilter === 'contribution' && stats.contributionNonSoldee) {
-        filteredCandidates.push(student)
-        continue
-      }
-
-      if (smsFilter === 'absence' && stats.absent) {
-        filteredCandidates.push(student)
-        continue
-      }
-    }
-
-    const uniquePhones = getUniquePhonesFromStudents(filteredCandidates)
-
-    if (uniquePhones.length === 0) {
-      setMessage('Aucun numéro valide pour ce filtre')
-      return
-    }
-
-    const lots = chunkArray(uniquePhones, Number(smsBatchSize || 25))
-
-    if (lots.length === 0) {
-      setMessage('Aucun lot à envoyer')
-      return
-    }
-
-    openSmsAppForBatch(lots[0], smsMessage)
-
-    if (lots.length > 1) {
-      setMessage(
-        `Lot 1/${lots.length} ouvert dans l'application SMS. ${uniquePhones.length} numéros valides trouvés.`
-      )
-    } else {
-      setMessage(
-        `${uniquePhones.length} numéro(s) prêt(s) dans l'application SMS.`
-      )
-    }
-  }
-
   const filteredStudents = students.filter((student) => {
     const query = search.trim().toLowerCase()
 
@@ -794,10 +795,23 @@ export default function StudentsPage({ profile }) {
       telephone.includes(query) ||
       email.includes(query)
 
-    return matchesSearch
-  })
+    if (!matchesSearch) return false
 
-  const smsFilteredStudents = filteredStudents
+    if (!showSmsPanel) return true
+
+    const stats = studentSmsStats[student.id] || {
+      inscriptionNonSoldee: false,
+      contributionNonSoldee: false,
+      absent: false,
+    }
+
+    if (smsFilter === 'tous') return true
+    if (smsFilter === 'inscription') return stats.inscriptionNonSoldee
+    if (smsFilter === 'contribution') return stats.contributionNonSoldee
+    if (smsFilter === 'absence') return stats.absent
+
+    return true
+  })
 
   if (selectedStudentId) {
     return (
@@ -815,10 +829,7 @@ export default function StudentsPage({ profile }) {
   return (
     <div style={styles.page}>
       {openMenuId && (
-        <div
-          style={styles.menuOverlay}
-          onClick={() => setOpenMenuId(null)}
-        />
+        <div style={styles.menuOverlay} onClick={() => setOpenMenuId(null)} />
       )}
 
       {openMenuId && (
@@ -925,9 +936,7 @@ export default function StudentsPage({ profile }) {
               ))}
             </select>
           ) : (
-            <div style={styles.infoBox}>
-              Centre : {classes[0]?.nom || '-'}
-            </div>
+            <div style={styles.infoBox}>Centre : {classes[0]?.nom || '-'}</div>
           )}
 
           <input
@@ -1084,6 +1093,14 @@ export default function StudentsPage({ profile }) {
       <div style={styles.card}>
         <h3 style={styles.sectionTitle}>Liste</h3>
 
+        <button
+          type="button"
+          style={styles.addButton}
+          onClick={() => setShowSmsPanel((prev) => !prev)}
+        >
+          {showSmsPanel ? 'Fermer message' : 'Message'}
+        </button>
+
         {isAdmin && certificatStudentId && (
           <div ref={certificatBoxRef} style={styles.certificatBox}>
             <p style={styles.certificatTitle}>
@@ -1119,74 +1136,98 @@ export default function StudentsPage({ profile }) {
           </div>
         )}
 
-        <div style={styles.smsBox}>
-          <h4 style={styles.smsTitle}>SMS étudiants</h4>
+        {showSmsPanel && (
+          <div style={styles.smsBox}>
+            <h4 style={styles.smsTitle}>SMS étudiants</h4>
 
-          <select
-            style={styles.input}
-            value={smsFilter}
-            onChange={handleSmsFilterChange}
-          >
-            <option value="tous">Tous</option>
-            <option value="inscription">Inscription non soldé</option>
-            <option value="contribution">Contribution non soldé</option>
-            <option value="absence">Absence</option>
-          </select>
+            <select
+              style={styles.input}
+              value={smsFilter}
+              onChange={handleSmsFilterChange}
+            >
+              <option value="tous">Tous</option>
+              <option value="inscription">Inscription non soldé</option>
+              <option value="contribution">Contribution non soldé</option>
+              <option value="absence">Absence</option>
+            </select>
 
-          <select
-            style={styles.input}
-            value={smsType}
-            onChange={handleSmsTypeChange}
-          >
-            <option value="rapide">Information rapide</option>
-            <option value="generale">Information générale</option>
-          </select>
+            <select
+              style={styles.input}
+              value={smsType}
+              onChange={handleSmsTypeChange}
+            >
+              <option value="rapide">Information rapide</option>
+              <option value="generale">Information générale</option>
+            </select>
 
-          <select
-            style={styles.input}
-            value={smsBatchSize}
-            onChange={(e) => setSmsBatchSize(Number(e.target.value))}
-          >
-            <option value={25}>Lot de 25</option>
-            <option value={50}>Lot de 50</option>
-            <option value={100}>Lot de 100</option>
-            <option value={150}>Lot de 150</option>
-            <option value={200}>Lot de 200</option>
-          </select>
+            <select
+              style={styles.input}
+              value={smsBatchSize}
+              onChange={(e) => setSmsBatchSize(Number(e.target.value))}
+            >
+              <option value={25}>Lot de 25</option>
+              <option value={50}>Lot de 50</option>
+              <option value={100}>Lot de 100</option>
+              <option value={150}>Lot de 150</option>
+              <option value={200}>Lot de 200</option>
+            </select>
 
-          <textarea
-            style={styles.textarea}
-            placeholder="Message SMS"
-            value={smsMessage}
-            onChange={(e) => setSmsMessage(e.target.value)}
-          />
+            <textarea
+              style={styles.textarea}
+              placeholder="Message SMS"
+              value={smsMessage}
+              onChange={(e) => setSmsMessage(e.target.value)}
+            />
 
-          <div style={styles.smsActionRow}>
+            <div style={styles.smsActionRow}>
+              <button
+                type="button"
+                style={styles.secondaryButtonHalf}
+                onClick={() => selectAllFilteredStudents(filteredStudents)}
+              >
+                Sélectionner tout
+              </button>
+
+              <button
+                type="button"
+                style={styles.secondaryButtonHalf}
+                onClick={clearStudentSelection}
+              >
+                Désélectionner tout
+              </button>
+            </div>
+
+            <div style={styles.smsActionRow}>
+              <button
+                type="button"
+                style={styles.secondaryButtonHalf}
+                onClick={() => selectNextUnsentBatch(filteredStudents)}
+              >
+                Suivant
+              </button>
+
+              <button
+                type="button"
+                style={styles.secondaryButtonHalf}
+                onClick={() => {
+                  setSentStudentIds([])
+                  setSelectedStudentIds([])
+                  setMessage('Sélection des lots réinitialisée')
+                }}
+              >
+                Réinitialiser
+              </button>
+            </div>
+
             <button
               type="button"
-              style={styles.secondaryButtonHalf}
-              onClick={() => selectAllFilteredStudents(smsFilteredStudents)}
+              style={styles.addButton}
+              onClick={() => sendSmsToSelectedStudents(filteredStudents)}
             >
-              Sélectionner tout
-            </button>
-
-            <button
-              type="button"
-              style={styles.secondaryButtonHalf}
-              onClick={clearStudentSelection}
-            >
-              Désélectionner tout
+              Envoyer SMS
             </button>
           </div>
-
-          <button
-            type="button"
-            style={styles.addButton}
-            onClick={sendSmsToSelectedStudents}
-          >
-            Envoyer SMS
-          </button>
-        </div>
+        )}
 
         <input
           style={styles.input}
@@ -1201,13 +1242,15 @@ export default function StudentsPage({ profile }) {
           filteredStudents.map((s) => (
             <div key={s.id} style={styles.studentCard}>
               <div style={styles.studentTopRow}>
-                <div style={styles.selectionRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedStudentIds.includes(s.id)}
-                    onChange={() => toggleStudentSelection(s.id)}
-                  />
-                </div>
+                {showSmsPanel && (
+                  <div style={styles.selectionRow}>
+                    <input
+                      type="checkbox"
+                      checked={selectedStudentIds.includes(s.id)}
+                      onChange={() => toggleStudentSelection(s.id)}
+                    />
+                  </div>
+                )}
 
                 <div style={styles.nameRow}>
                   <strong style={styles.studentName}>
