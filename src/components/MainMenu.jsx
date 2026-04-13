@@ -2,6 +2,7 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
   const isAdmin = profile?.role === 'admin'
   const isAssistant = profile?.role === 'assistant'
 
+
   const items = [
     { key: 'home', label: 'Accueil' },
 
@@ -9,11 +10,14 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
       ? [{ key: 'classes', label: 'Centres' }]
       : []),
 
+    ...(isAssistant
+      ? [{ key: 'assistant-profile', label: 'Mon profil' }]
+      : []),
+
     { key: 'students', label: 'Étudiants' },
     { key: 'couples', label: 'Couples' },
     { key: 'seances', label: 'Séances' },
     { key: 'rattrapages', label: 'Rattrapages' },
-
     { key: 'paiements', label: 'Paiements' },
 
     {
@@ -21,6 +25,7 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
       label: isAdmin ? 'Bilans' : 'Mon centre',
     },
   ]
+
 
   return (
     <div style={styles.wrapper}>
