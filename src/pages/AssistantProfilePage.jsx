@@ -136,6 +136,9 @@ export default function AssistantProfilePage({
     }))
   }
 
+
+
+// Commentaire
   async function saveProfile(e) {
     e.preventDefault()
     setMessage('')
@@ -152,13 +155,13 @@ export default function AssistantProfilePage({
       class_id: resolvedClassId || null,
       nom: form.nom.trim(),
       sexe: form.sexe || null,
-      ministere: form.ministere.trim(),
+      ministere: form.ministere.trim() || null,
       date_formation: form.date_formation || null,
       date_assistanat: form.date_assistanat || null,
-      telephone: form.telephone.trim(),
-      pays: form.pays.trim(),
-      ville: form.ville.trim(),
-      centres_assistes: form.centres_assistes.trim(),
+      telephone: form.telephone.trim() || null,
+      pays: form.pays.trim() || null,
+      ville: form.ville.trim() || null,
+      centres_assistes: form.centres_assistes.trim() || null,
     }
 
     if (resolvedAssistantId) {
@@ -171,7 +174,7 @@ export default function AssistantProfilePage({
 
       if (error) {
         console.log(error)
-        setMessage('Erreur enregistrement profil assistant')
+        setMessage(`Erreur modification profil assistant : ${error.message}`)
         return
       }
 
@@ -182,7 +185,12 @@ export default function AssistantProfilePage({
 
     const { data, error } = await supabase
       .from('profiles')
-      .insert([payload])
+      .insert([
+        {
+          id: crypto.randomUUID(),
+          ...payload,
+        },
+      ])
       .select()
       .single()
 
@@ -190,7 +198,7 @@ export default function AssistantProfilePage({
 
     if (error) {
       console.log(error)
-      setMessage('Erreur création profil assistant')
+      setMessage(`Erreur création profil assistant : ${error.message}`)
       return
     }
 
@@ -250,6 +258,7 @@ export default function AssistantProfilePage({
             style={styles.input}
             type="date"
             name="date_formation"
+            placeholder="date formation"
             value={form.date_formation}
             onChange={handleChange}
           />
@@ -258,6 +267,7 @@ export default function AssistantProfilePage({
             style={styles.input}
             type="date"
             name="date_assistanat"
+            placeholder="date assistanat"
             value={form.date_assistanat}
             onChange={handleChange}
           />
