@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import AssistantProfilePage from './pages/AssistantProfilePage'
-
+import AssistantsPage from './pages/AssistantsPage'"
 
 import HomePage from './pages/HomePage'
 import CentresPage from './pages/CentresPage'
@@ -329,6 +329,11 @@ export default function App() {
     if (page === 'seances') {
       return <SeancesPage profile={activeProfile} />
     }
+    
+    if (page === 'assistants') {
+      return <AssistantsPage profile={activeProfile} />
+    }
+
 
     if (page === 'rattrapages') {
       return <RattrapagesPage profile={activeProfile} />

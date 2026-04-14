@@ -7,25 +7,22 @@ export default function MainMenu({ currentPage, onChangePage, profile, onLogout 
     { key: 'home', label: 'Accueil' },
 
     ...(isAdmin
-      ? [{ key: 'classes', label: 'Centres' }]
-      : []),
-
-    ...(isAssistant
-      ? [{ key: 'assistant-profile', label: 'Mon profil' }]
-      : []),
+      ? [
+          { key: 'classes', label: 'Centres' },
+          { key: 'assistants', label: 'Assistants' },
+        ]
+      : [{ key: 'assistant-profile', label: 'Mon profil' }]),
 
     { key: 'students', label: 'Étudiants' },
     { key: 'couples', label: 'Couples' },
     { key: 'seances', label: 'Séances' },
     { key: 'rattrapages', label: 'Rattrapages' },
     { key: 'paiements', label: 'Paiements' },
-
     {
       key: 'bilans',
       label: isAdmin ? 'Bilans' : 'Mon centre',
     },
   ]
-
 
   return (
     <div style={styles.wrapper}>

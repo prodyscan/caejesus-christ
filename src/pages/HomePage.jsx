@@ -9,18 +9,19 @@ export default function HomePage({ onNavigate, profile, onLogout }) {
             title: 'Centres',
             subtitle: 'Créer, modifier et voir les centres',
           },
+          {
+            key: 'assistants',
+            title: 'Assistants',
+            subtitle: 'Voir, filtrer et gérer les assistants enregistrés',
+          },
         ]
-      : []),
-
-    ...(!isAdmin
-      ? [
+      : [
           {
             key: 'assistant-profile',
             title: 'Mon profil',
             subtitle: 'Ajouter ou modifier mes informations',
           },
-        ]
-      : []),
+        ]),
 
     {
       key: 'students',
@@ -65,7 +66,6 @@ export default function HomePage({ onNavigate, profile, onLogout }) {
         : 'Voir le bilan de mon centre',
     },
   ]
-
 
   return (
     <div style={styles.page}>
