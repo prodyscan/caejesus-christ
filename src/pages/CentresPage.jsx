@@ -62,7 +62,7 @@ export default function ClassesPage({ profile }) {
       .replace(/[^a-zA-Z]/g, '')
       .trim()
 
-    if (!clean) return 'Cae'
+    if (!clean) return 'Abj'
 
     const lower = clean.toLowerCase()
 
@@ -73,8 +73,14 @@ export default function ClassesPage({ profile }) {
     if (lower.startsWith('korhogo')) return 'Kor'
     if (lower.startsWith('daloa')) return 'Dal'
     if (lower.startsWith('sanpedro')) return 'San'
+    if (lower.startsWith('bingerville')) return 'Bin'
+    if (lower.startsWith('anyama')) return 'Any'
 
-    return clean.charAt(0).toUpperCase() + clean.slice(1, 3).toLowerCase()
+    const first = clean.charAt(0).toUpperCase()
+    const second = clean.charAt(1)?.toLowerCase() || 'a'
+    const third = clean.charAt(2)?.toLowerCase() || 'a'
+
+    return `${first}${second}${third}`
   }
 
   function generateNextAssistantCode(existingClasses) {
@@ -272,9 +278,8 @@ export default function ClassesPage({ profile }) {
 
   async function openAssistantProfile(classe) {
     const { data, error } = await supabase
-      .from('profiles')
+      .from('assistant_profiles')
       .select('id')
-      .eq('role', 'assistant')
       .eq('class_id', classe.id)
       .limit(1)
       .maybeSingle()
@@ -318,6 +323,10 @@ export default function ClassesPage({ profile }) {
         profile={profile}
         assistantId={selectedAssistantClass.assistantId}
         classId={selectedAssistantClass.classId}
+        onBack={() => {
+          setSelectedAssistantClass(null)
+          getClasses()
+        }}
       />
     )
   }
